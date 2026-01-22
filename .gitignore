@@ -1,0 +1,15 @@
+# Julia
+*.jl.cov
+*.jl.mem
+*.ji
+Manifest.toml
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+
+# Build
+deps/deps.jl
