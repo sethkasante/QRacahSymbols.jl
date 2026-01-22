@@ -2,3 +2,9 @@ name = "Quantum6j"
 uuid = "2b562d8e-bf11-4e94-980c-128e38f2978a"
 version = "0.1.0"
 authors = ["Seth-Kurankyi <seth.kurankyi@gmail.com>"]
+
+#[deps]
+#Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+Test = "1.11.0"
