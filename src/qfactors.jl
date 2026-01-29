@@ -205,9 +205,10 @@ end
 function _qracah6j(j1, j2, j3, j4, j5, j6)
     
     # check quantum triangle conditions for all faces in tetrahedron
-    if !(δtet(j1, j2, j3, j4, j5, j6))
-        return CycloMonomial()
-    end
+    !(δtet(j1, j2, j3, j4, j5, j6)) || throw(ArgumentError("The input spins are inadmissible"))
+    # if !(δtet(j1, j2, j3, j4, j5, j6))
+    #     return CycloMonomial()
+    # end
     
     #WignerSymbols reorders this for storage purposes 
     α1, α2, α3, α4 = j1 + j2 + j3, j1 + j5 + j6, j2 + j4 + j6, j3 + j4 + j5
