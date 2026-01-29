@@ -28,6 +28,11 @@ struct CycloMonomial
 end
 
 # struct CycloMonomial
+#     exponent::Dict{Int, Int}   # d => powers of Φ_d 
+# end
+
+
+# struct CycloMonomial
 #     powers::Dict{Int,Int}
 #     function CycloTerm(powers::Dict{Int,Int})
 #         # remove zero exponents automatically
