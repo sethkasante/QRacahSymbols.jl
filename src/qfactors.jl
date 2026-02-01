@@ -7,9 +7,9 @@ export CyclotomicBasis,
        CycloMonomial,CycloSum, _qRacahsum, 
        qinteger,
        qfactorial,
-       qΔ2, qδ, δ, 
+       qΔ2, qδ, δ, _qΔ2,
        DIVISOR_CACHE, QINTEGER_CACHE, QFACTORIAL_CACHE,
-       q6jsummand,
+       q6jsummand, _q6jsummand, 
        qRacahsum, factored_sum,
        _qracah6j,
        cyclotomic_eval, q_root
@@ -168,11 +168,8 @@ function _qΔ2(j1, j2, j3)
 
     for d in 2:n4
         exponent =
-            floor(n1/d) +
-            floor(n2/d) +
-            floor(n3/d) -
-            floor(n4/d)
-
+            floor(n1/d) + floor(n2/d) + 
+            floor(n3/d) - floor(n4/d)
         exponent != 0 && (dict[d] = exponent)
     end
 
@@ -185,13 +182,21 @@ end
 
 function _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
     dict = Dict{Int,Int}()
+    n1 = (z+1)
+    a1, a2, a3, a4 = z-α1, z-α2, z-α3, z-α4
+    b1, b2, b3 = β1-z, β2-z, β3-z
     for d in 2:max(z+1,β1-z,β2-z,β3-z)
-        exponent = floor(Int,(z+1)/d) - floor(Int,(z-α1)/d) - floor(Int,(z-α2)/d) - 
-                    floor(Int,(z-α3)/d) - floor(Int,(z-α4)/d) - floor(Int,(β1-z)/d) -
-                        floor(Int,(β2-z)/d) - floor(Int,(β3-z)/d)
-        exponent != 0 ? dict[d] = exponent : nothing
+        exponent = floor(Int,n1/d) - 
+                    floor(Int,a1/d) - floor(Int,a2/d) - floor(Int,a3/d) - 
+                    floor(Int,a4/d) - floor(Int,b1/d) - floor(Int,b2/d) -
+                    floor(Int,b3/d)
+        exponent != 0 && (dict[d] = exponent)
     end
-    return CycloMonomial(dict)
+    # monomial units 
+    unit_exp = -((n1*(n1-1) - a1*(a1-1) - a2*(a2-1) - a3*(a3-1) -
+                a4*(a4-1) - b1*(b1-1) - b2*(b2-1) - b3*(b3-1)) // 4)
+
+    return CycloExpr(unit_exp, CycloMonomial(dict))
 end
 
 function _qRacahsum(α1,α2,α3,α4,β1,β2,β3)
@@ -200,11 +205,15 @@ function _qRacahsum(α1,α2,α3,α4,β1,β2,β3)
     # n = length(zrange)
     sgns = Int[] 
     terms = CycloMonomial[] # add sizehint = n 
+    units = Rational{Int}[] # add sizehint = n 
     for z in zrange
-        push!(terms, _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3) )
+        cyexpr = _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
+        push!(terms, cyexpr.cyclo )
+        push!(units, cyexpr.unit_exp )
         push!(sgns, iseven(z) ? 1 : -1 )
     end
-    return CycloSum(terms,sgns)
+
+    return CycloSumS(terms,sgns,units)
 end
 # ----- dealing with summation -----
 
@@ -212,6 +221,12 @@ end
 Restructure sums into  Σ (-1)^z_i F_i =  C ⋅ Σ (-1)^z_i (R_i):
   C is common factor, R_i is residuals F_i/C and coeffs are signs (-1)^z_i
 """
+
+struct CycloSumS               # global common factors
+    terms::Vector{CycloMonomial}  # reduced monomials → coeff
+    coeffs::Vector{Int}
+    unit_exp::Vector{Rational{Int}}
+end
 
 struct CycloSum               # global common factors
     terms::Vector{CycloMonomial}  # reduced monomials → coeff
