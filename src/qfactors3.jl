@@ -19,25 +19,102 @@ export CyclotomicBasis,
 # """
 # CyclotomicBasis(N)
 
+
+
+# classical and quantum triangle conditions at level k: 
+# checks admissible triple 
+"""
+    δ(j1, j2, j3,k) -> ::Bool
+    qδ(j1, j2, j3,k) -> ::Bool
+
+Checks the triangle conditions `j3 ≤ j1 + j2`, `j1 ≤ j2 + j3`, `j2 ≤ j3 + j1` and extra condition `j1 + j2 + j3 ≤ k` for qδ.
+"""
+δ(j1, j2, j3) = isinteger(j1+j2+j3) && (j3 <= j1 + j2) && (j1 <= j2 + j3) && (j2 <= j3 + j1) 
+
+qδ(j1, j2, j3, k) = δ(j1, j2, j3) && (j1 + j2 + j3) <= k 
+
+
+δtet(j1, j2, j3, j4, j5, j6) = δ(j1, j2, j3) && δ(j1, j5, j6) && δ(j2, j4, j6) && δ(j3, j4, j5)
+
+qδtet(j1, j2, j3, j4, j5, j6) = qδ(j1, j2, j3, k) && qδ(j1, j5, j6, k) && qδ(j2, j4, j6, k), qδ(j3, j4, j5, k)
+
+
+
 """
 A monomial of the cyclotomic polynomial basis.
 Represents ∏ Φ_d(q)^{e_d}. These are our basis objects
 """
 struct CycloMonomial
-    powers::Dict{Int, Int}   # d => powers of Φ_d 
+    exponent::Dict{Int, Int}   # d => e : Φ_d^e 
 end
 
 struct CycloExpr
-    unit_exp::Rational{Int}              # exponent m such that unit = q^(m/2)
+    unit_exp::Rational{Int}     # exponent m such that unit = q^(m/2)
     cyclo::CycloMonomial
+end
+
+struct CycloSum               # global common factors
+    unit_exp::Vector{Rational{Int}}
+    coeffs::Vector{Int}
+    terms::Vector{CycloMonomial}  # reduced monomials → coeff
+end
+
+CycloMonomial() = CycloMonomial(Dict{Int,Int}())
+
+
+"""
+quantum triangle coefficient in cyclotomic form
+"""
+function _qΔ2(j1, j2, j3)
+    δ(j1, j2, j3) || return CycloExpr(0, CycloMonomial())
+
+    dict = Dict{Int,Int}()
+    n1 = j1 + j2 - j3
+    n2 = j1 - j2 + j3
+    n3 = -j1 + j2 + j3
+    n4 = j1 + j2 + j3 + 1
+
+    for d in 2:n4
+        exponent =
+            floor(Int, n1/d) + floor(Int, n2/d) + 
+            floor(Int, n3/d) - floor(Int, n4/d)
+        exponent != 0 && (dict[d] = exponent)
+    end
+
+    # unit exponent from factorials
+
+    unit_exp = -((n1*(n1-1) + n2*(n2-1) + n3*(n3-1) - n4*(n4-1)) // 4)
+
+    return CycloExpr(unit_exp, CycloMonomial(dict))
+end
+
+
+"""
+each term in Racah summand
+"""
+function _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
+    dict = Dict{Int,Int}()
+    n1 = (z+1)
+    a1, a2, a3, a4 = z-α1, z-α2, z-α3, z-α4
+    b1, b2, b3 = β1-z, β2-z, β3-z
+    for d in 2:max(z+1,β1-z,β2-z,β3-z)
+        exponent = floor(Int,n1/d) - 
+                    floor(Int,a1/d) - floor(Int,a2/d) - floor(Int,a3/d) - 
+                    floor(Int,a4/d) - floor(Int,b1/d) - floor(Int,b2/d) -
+                    floor(Int,b3/d)
+        exponent != 0 && (dict[d] = exponent)
+    end
+    # monomial units 
+    unit_exp = -((n1*(n1-1) - a1*(a1-1) - a2*(a2-1) - a3*(a3-1) -
+                a4*(a4-1) - b1*(b1-1) - b2*(b2-1) - b3*(b3-1)) // 4)
+
+    return CycloExpr(unit_exp, CycloMonomial(dict))
 end
 
 
 #TODO: can we set it up such that any element with value 0 is automatically removed?
 
-CycloMonomial() = CycloMonomial(Dict{Int,Int}())
 
-CycloMonomial(d::Int, e::Int=1) = CycloMonomial(Dict(d => e))
 
 
 const DIVISOR_CACHE = LRU{Int, Vector{Int}}(maxsize=10_000)
@@ -106,22 +183,6 @@ end
 # end
 
 
-# classical and quantum triangle conditions at level k: 
-# checks admissible triple 
-"""
-    δ(j1, j2, j3,k) -> ::Bool
-    qδ(j1, j2, j3,k) -> ::Bool
-
-Checks the triangle conditions `j3 ≤ j1 + j2`, `j1 ≤ j2 + j3`, `j2 ≤ j3 + j1` and extra condition `j1 + j2 + j3 ≤ k` for qδ.
-"""
-δ(j1, j2, j3) = isinteger(j1+j2+j3) && (j3 <= j1 + j2) && (j1 <= j2 + j3) && (j2 <= j3 + j1) 
-
-qδ(j1, j2, j3, k) = δ(j1, j2, j3) && (j1 + j2 + j3) <= k 
-
-
-δtet(j1, j2, j3, j4, j5, j6) = δ(j1, j2, j3) && δ(j1, j5, j6) && δ(j2, j4, j6) && δ(j3, j4, j5)
-
-qδtet(j1, j2, j3, j4, j5, j6) = qδ(j1, j2, j3, k) && qδ(j1, j5, j6, k) && qδ(j2, j4, j6, k), qδ(j3, j4, j5, k)
 
 
 """
@@ -145,47 +206,7 @@ end
 #     return CycloMonomial(dict)
 # end
 
-function _qΔ2(j1, j2, j3)
-    δ(j1, j2, j3) || return CycloExpr(0, CycloMonomial())
 
-    dict = Dict{Int,Int}()
-    n1 = j1 + j2 - j3
-    n2 = j1 - j2 + j3
-    n3 = -j1 + j2 + j3
-    n4 = j1 + j2 + j3 + 1
-
-    for d in 2:n4
-        exponent =
-            floor(n1/d) + floor(n2/d) + 
-            floor(n3/d) - floor(n4/d)
-        exponent != 0 && (dict[d] = exponent)
-    end
-
-    # unit exponent from factorials
-
-    unit_exp = -((n1*(n1-1) + n2*(n2-1) + n3*(n3-1) - n4*(n4-1)) // 4)
-
-    return CycloExpr(unit_exp, CycloMonomial(dict))
-end
-
-function _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
-    dict = Dict{Int,Int}()
-    n1 = (z+1)
-    a1, a2, a3, a4 = z-α1, z-α2, z-α3, z-α4
-    b1, b2, b3 = β1-z, β2-z, β3-z
-    for d in 2:max(z+1,β1-z,β2-z,β3-z)
-        exponent = floor(Int,n1/d) - 
-                    floor(Int,a1/d) - floor(Int,a2/d) - floor(Int,a3/d) - 
-                    floor(Int,a4/d) - floor(Int,b1/d) - floor(Int,b2/d) -
-                    floor(Int,b3/d)
-        exponent != 0 && (dict[d] = exponent)
-    end
-    # monomial units 
-    unit_exp = -((n1*(n1-1) - a1*(a1-1) - a2*(a2-1) - a3*(a3-1) -
-                a4*(a4-1) - b1*(b1-1) - b2*(b2-1) - b3*(b3-1)) // 4)
-
-    return CycloExpr(unit_exp, CycloMonomial(dict))
-end
 
 function _qRacahsum(α1,α2,α3,α4,β1,β2,β3)
     #range of z values
@@ -210,16 +231,12 @@ Restructure sums into  Σ (-1)^z_i F_i =  C ⋅ Σ (-1)^z_i (R_i):
   C is common factor, R_i is residuals F_i/C and coeffs are signs (-1)^z_i
 """
 
-struct CycloSumS               # global common factors
-    terms::Vector{CycloMonomial}  # reduced monomials → coeff
-    coeffs::Vector{Int}
-    unit_exp::Vector{Rational{Int}}
-end
 
-struct CycloSum               # global common factors
-    terms::Vector{CycloMonomial}  # reduced monomials → coeff
-    coeffs::Vector{Int}
-end
+
+# struct CycloSum               # global common factors
+#     terms::Vector{CycloMonomial}  # reduced monomials → coeff
+#     coeffs::Vector{Int}
+# end
 
 
 """
