@@ -53,6 +53,19 @@ function Base.:*(a::CycloMonomial, b::CycloMonomial)
     return CycloMonomial(expo)
 end
 
+# function Base.:*(a::CycloExpr, b::CycloExpr)
+#     unit_exp = a.unit_exp + b.unit_exp
+
+#     # Multiply cyclotomic monomials
+#     dict = copy(a.cyclo.exponent)
+#     for (d, e) in b.cyclo.exponent
+#         dict[d] = get(dict, d, 0) + e
+#         dict[d] == 0 && delete!(dict, d)
+#     end
+
+#     return CycloExpr(unit_exp, CycloMonomial(dict))
+# end
+
 Base.:/(a::CycloMonomial, b::CycloMonomial) =
     a * CycloMonomial(Dict(d => -e for (d,e) in b.powers))
 

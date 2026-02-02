@@ -1,23 +1,13 @@
 module FactoredQuantum
 
-using Primes
-using LRUCache
+Let's design cleanly and efficiently what remains for the code part. Below is what we have so far.
 
 export CyclotomicBasis,
-       CycloMonomial,CycloSum, _qRacahsum, 
-       qinteger,
-       qfactorial,
-       qΔ2, qδ, δ, _qΔ2,
-       DIVISOR_CACHE, QINTEGER_CACHE, QFACTORIAL_CACHE,
-       q6jsummand, _q6jsummand, 
-       qRacahsum, factored_sum,
-       _qracah6j,
-       cyclotomic_eval, q_root
+       CycloMonomial, CycloExpr, CycloSum, 
+       _qΔ2, _q6jsummand, 
+       _qRacahsum, _qracah6j,
+       qδ, δ, δtet, qδtet
 
-# using LinearAlgebra
-
-# """
-# CyclotomicBasis(N)
 
 
 
@@ -29,14 +19,16 @@ export CyclotomicBasis,
 
 Checks the triangle conditions `j3 ≤ j1 + j2`, `j1 ≤ j2 + j3`, `j2 ≤ j3 + j1` and extra condition `j1 + j2 + j3 ≤ k` for qδ.
 """
-δ(j1, j2, j3) = isinteger(j1+j2+j3) && (j3 <= j1 + j2) && (j1 <= j2 + j3) && (j2 <= j3 + j1) 
+δ(j1, j2, j3) = isinteger(j1+j2+j3) && (abs(j1-j2) <= j3 <= j1+j2)
+
+# (j3<= j1+j2) && (j1 <= j2 + j3) && (j2 <= j3 + j1) 
 
 qδ(j1, j2, j3, k) = δ(j1, j2, j3) && (j1 + j2 + j3) <= k 
 
 
 δtet(j1, j2, j3, j4, j5, j6) = δ(j1, j2, j3) && δ(j1, j5, j6) && δ(j2, j4, j6) && δ(j3, j4, j5)
 
-qδtet(j1, j2, j3, j4, j5, j6) = qδ(j1, j2, j3, k) && qδ(j1, j5, j6, k) && qδ(j2, j4, j6, k), qδ(j3, j4, j5, k)
+qδtet(j1, j2, j3, j4, j5, j6) = qδ(j1, j2, j3, k) && qδ(j1, j5, j6, k) && qδ(j2, j4, j6, k) && qδ(j3, j4, j5, k)
 
 
 
@@ -47,6 +39,7 @@ Represents ∏ Φ_d(q)^{e_d}. These are our basis objects
 struct CycloMonomial
     exponent::Dict{Int, Int}   # d => e : Φ_d^e 
 end
+
 
 struct CycloExpr
     unit_exp::Rational{Int}     # exponent m such that unit = q^(m/2)
@@ -62,8 +55,26 @@ end
 CycloMonomial() = CycloMonomial(Dict{Int,Int}())
 
 
+Base.length(m::CycloMonomial) = length(m.exponent)
+
+function Base.:*(a::CycloMonomial, b::CycloMonomial)
+    # loop over smaller dict
+    small, large = length(a) ≤ length(b) ? (a,b) : (b,a)
+    dict = copy(large.exponent)
+    for (d,e) in small.exponent
+        dict[d] = get(dict,d,0) + e
+        dict[d] == 0 && delete!(dict,d)
+    end
+    return CycloMonomial(dict)
+end
+
+function Base.:*(a::CycloExpr, b::CycloExpr)
+    CycloExpr(a.unit_exp + b.unit_exp,
+        a.cyclo * b.cyclo)
+end
+
 """
-quantum triangle coefficient in cyclotomic form
+quantum triangle coefficient squared in cyclotomic form
 """
 function _qΔ2(j1, j2, j3)
     δ(j1, j2, j3) || return CycloExpr(0, CycloMonomial())
@@ -73,6 +84,7 @@ function _qΔ2(j1, j2, j3)
     n2 = j1 - j2 + j3
     n3 = -j1 + j2 + j3
     n4 = j1 + j2 + j3 + 1
+    sizehint!(dict,n4-1)
 
     for d in 2:n4
         exponent =
@@ -88,12 +100,13 @@ function _qΔ2(j1, j2, j3)
     return CycloExpr(unit_exp, CycloMonomial(dict))
 end
 
-
 """
-each term in Racah summand
+cyclo expression for each term in Racah sum
 """
 function _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
     dict = Dict{Int,Int}()
+
+    #factorials 
     n1 = (z+1)
     a1, a2, a3, a4 = z-α1, z-α2, z-α3, z-α4
     b1, b2, b3 = β1-z, β2-z, β3-z
@@ -104,227 +117,98 @@ function _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
                     floor(Int,b3/d)
         exponent != 0 && (dict[d] = exponent)
     end
-    # monomial units 
-    unit_exp = -((n1*(n1-1) - a1*(a1-1) - a2*(a2-1) - a3*(a3-1) -
+    # monomial unit exponents
+
+    unit_expr = -((n1*(n1-1) - a1*(a1-1) - a2*(a2-1) - a3*(a3-1) -
                 a4*(a4-1) - b1*(b1-1) - b2*(b2-1) - b3*(b3-1)) // 4)
 
-    return CycloExpr(unit_exp, CycloMonomial(dict))
-end
-
-
-#TODO: can we set it up such that any element with value 0 is automatically removed?
-
-
-
-
-const DIVISOR_CACHE = LRU{Int, Vector{Int}}(maxsize=10_000)
-const QINTEGER_CACHE = LRU{Int, CycloMonomial}(maxsize=10_000)
-const QFACTORIAL_CACHE = LRU{Int, CycloMonomial}(maxsize=5_000)
-
-function Base.:*(a::CycloMonomial, b::CycloMonomial)
-    expo = copy(a.powers)
-    for (d,e) in b.powers
-        expo[d] = get(expo,d,0) + e
-        # exp[d] == 0 && delete!(exp,d)
-    end
-    return CycloMonomial(expo)
-end
-
-Base.:/(a::CycloMonomial, b::CycloMonomial) =
-    a * CycloMonomial(Dict(d => -e for (d,e) in b.powers))
-
-Base.://(a::CycloMonomial, b::CycloMonomial) = a / b
-
-function Base.:^(a::CycloMonomial, n::Int)
-    CycloMonomial(Dict(d => n*e for (d,e) in a.powers))
-end
-
-
-
-@inline function divisors_cached(n::Int)
-    n == 0 && return Int[]
-    return get!(DIVISOR_CACHE, n) do
-        return divisors(n) # use divisors from Prime 
-    end
-end
-
-
-"""
-qinteger(n)
-
-Returns cyclotomic representation of integer [n]_q
-"""
-function qinteger(n::Int)
-    get!(QINTEGER_CACHE, n) do
-        divs = divisors_cached(n)[2:end] # omit d = 1 
-        CycloMonomial(Dict(divs .=> 1))
-    end
+    return CycloExpr(unit_expr, CycloMonomial(dict))
 end
 
 """
-qfactorial(n)
-
-Returns cyclotomic representation of [n]_q!
+Sums of cyclotomic expressions
 """
-function qfactorial(n::Int)
-    n <= 1 && return CycloMonomial()
-    get!(QFACTORIAL_CACHE, n) do
-        qfactorial(n-1) * qinteger(n)
-    end
-end
-
-# function _qfactorial(n::Int)
-#     n <= 1 && return CycloMonomial()
-#     dict = Dict{Int,Int}()
-#     for d in 2:n
-#         dict[d] = floor(n/d)
-#     end
-#     return CycloMonomial(dict)
-# end
-
-
-
-
-"""
-quantum triangle coefficient in cyclotomic representation
-"""
-function qΔ2(j1,j2,j3)
-    qfactorial(j1 + j2 - j3) * qfactorial(j1 - j2 + j3) * 
-        qfactorial(-j1 + j2 + j3) / qfactorial(j1 + j2 + j3 + 1)
-end
-
-
-
-# function _qΔ2(j1,j2,j3)
-#     δ(j1, j2, j3) || return CycloMonomial()
-#     dict = Dict{Int,Int}()
-#     for d in 2:j1+j2+j3+1
-#         exponent = floor(Int,(j1+j2-j3)/d) + floor(Int,(j1-j2+j3)/d) + 
-#                     floor(Int,(-j1+j2+j3)/d) - floor(Int,(j1+j2+j3+1)/d)
-#         exponent != 0 ? dict[d] = exponent : nothing
-#     end
-#     return CycloMonomial(dict)
-# end
-
-
-
 function _qRacahsum(α1,α2,α3,α4,β1,β2,β3)
     #range of z values
     zrange = max(α1,α2,α3,α4):min(β1,β2,β3)
     # n = length(zrange)
     sgns = Int[] 
     terms = CycloMonomial[] # add sizehint = n 
-    units = Rational{Int}[] # add sizehint = n 
+    unit_expr = Rational{Int}[] # add sizehint = n 
     for z in zrange
-        cyexpr = _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
-        push!(terms, cyexpr.cyclo )
-        push!(units, cyexpr.unit_exp )
+        cyclo_expr = _q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
+        push!(terms, cyclo_expr.cyclo )
+        push!(unit_expr, cyclo_expr.unit_exp )
         push!(sgns, iseven(z) ? 1 : -1 )
     end
 
-    return CycloSumS(terms,sgns,units)
-end
-# ----- dealing with summation -----
-
-"""
-Restructure sums into  Σ (-1)^z_i F_i =  C ⋅ Σ (-1)^z_i (R_i):
-  C is common factor, R_i is residuals F_i/C and coeffs are signs (-1)^z_i
-"""
-
-
-
-# struct CycloSum               # global common factors
-#     terms::Vector{CycloMonomial}  # reduced monomials → coeff
-#     coeffs::Vector{Int}
-# end
-
-
-"""
-individual elements in the Racah sum 
-"""
-function q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
-    num = qfactorial(z+1)
-    den = qfactorial(z-α1) * qfactorial(z-α2) * qfactorial(z-α3) * 
-            qfactorial(z-α4) * qfactorial(β1-z) * qfactorial(β2-z) *
-                qfactorial(β3-z)
-    return num / den
+    return CycloSum(unit_expr,sgns,terms)
 end
 
-# look for common factors in a list of CycloMonomials  -> CycloMonomial
-function common_factors(terms)
-    common = Dict{Int,Int}()
-    all_d = Set{Int}()
-    for m in terms
-        for d in keys(m.powers)
-            push!(all_d, d)
-        end
-    end
-    for d in all_d
-        cmin = minimum(get(m.powers,d,0) for m in terms)
-        cmin != 0 && (common[d] = cmin)
-    end
-    return CycloMonomial(common)
-end
-
-function residual_terms(terms, common) #terms::Vector{CycloMonomial}
-    return [m / common for m in terms]
-end
-
-function factored_sum(terms)
-    cm = common_factors(terms) 
-    residue = isempty(cm.powers) ? terms : residual_terms(terms,cm)
-    return cm, residue 
-end
-
-
-"""
-Racah sum as a sum over cyclotomic polynomial basis -> CycloSum
-"""
-# α1,α2,α3,α4,β1,β2,β3 are functions of spins js
-function qRacahsum(α1,α2,α3,α4,β1,β2,β3)
-    #range of z values
-    zrange = max(α1,α2,α3,α4):min(β1,β2,β3)
-    # n = length(zrange)
-    sgns = Int[] 
-    terms = CycloMonomial[] # add sizehint = n 
-    for z in zrange
-        push!(terms, q6jsummand(z,α1,α2,α3,α4,β1,β2,β3) )
-        push!(sgns, iseven(z) ? 1 : -1 )
-    end
-    cm, res = factored_sum(terms)
-    return cm, res, sgns
-    # CycloSum(cm,res,sgns)
-end
 
 
 function _qracah6j(j1, j2, j3, j4, j5, j6)
     
-    # check quantum triangle conditions for all faces in tetrahedron
-    !(δtet(j1, j2, j3, j4, j5, j6)) || throw(ArgumentError("The input spins are inadmissible"))
-    # if !(δtet(j1, j2, j3, j4, j5, j6))
-    #     return CycloMonomial()
-    # end
-    
-    #WignerSymbols reorders this for storage purposes 
-    α1, α2, α3, α4 = j1 + j2 + j3, j1 + j5 + j6, j2 + j4 + j6, j3 + j4 + j5
-    β1, β2, β3 = j1 + j2 + j4 + j5, j1 + j3 + j4 + j6, j2 + j3 + j5 + j6
-
+   
     #WignerSymbols reorders this for storage purposes 
     t1 = (j1, j2, j3)
     t2 = (j1, j5, j6)
     t3 = (j2, j4, j6)
     t4 = (j3, j4, j5)
 
-    tri2_coeff = qΔ2(t1...) * qΔ2(t2...) *
-                    qΔ2(t3...) * qΔ2(t4...)
+    T2 = _qΔ2(t1...) * _qΔ2(t2...) * _qΔ2(t3...) * _qΔ2(t4...)
+    
+    #WignerSymbols reorders this for storage purposes 
+    α1, α2, α3, α4 = j1 + j2 + j3, j1 + j5 + j6, j2 + j4 + j6, j3 + j4 + j5
+    β1, β2, β3 = j1 + j2 + j4 + j5, j1 + j3 + j4 + j6, j2 + j3 + j5 + j6
 
-    cm, res, sgns = qRacahsum(α1,α2,α3,α4,β1,β2,β3)
-    #square root term squared 
-    R = simplify(tri2_coeff * cm^2)
-    res = [simplify(r) for r in res]
-    S = CycloSum(res,sgns)
-    return R, S
+    S = _qRacahsum(α1,α2,α3,α4,β1,β2,β3)
+    return T2, S
 end
+
+
+# ------ valuation ----- 
+
+valuation(m::CycloMonomial, d::Int) = get(m.exponent, d, 0)
+
+valuation(e::CycloExpr, d::Int) = valuation(e.cyclo, d)
+
+function valuation(S::CycloSum, d::Int)
+    vmin = typemax(Int)
+    for m in S.terms
+        v = valuation(m, d)
+        v < vmin && (vmin = v)
+    end
+    return vmin
+end
+
+function support(S::CycloSum)
+    ds = Set{Int}()
+    for m in S.terms
+        union!(ds, keys(m.exponent))
+    end
+    return ds
+end
+
+function valuation_q6j(j1, j2, j3, j4, j5, j6, d)
+    T2, S = _qracah6j(j1, j2, j3, j4, j5, j6)
+    return (valuation(T2, d) + valuation(S, d) )
+end
+
+# function valuation_q6j(j1, j2, j3, j4, j5, j6) 
+#     T2, S = _qracah6j(j1, j2, j3, j4, j5, j6)  
+#     vals = Tuple{Int64, Int64}[]
+#     for d in support(S)
+#         push!(vals, (d, valuation(T2, d) + valuation(S, d)) )
+#     end
+#     return vals
+# end
+
+
+
+
+
+
 
 function simplify(ct::CycloMonomial)
     CycloMonomial(Dict(filter((d,e)->e!=0, ct.powers)))
@@ -342,42 +226,6 @@ end
 #-----------Now evaluation k,needed ------
 
 #note q-admissible relation ensure no d > k+2 in the evaluation.
-
-
-
-
-# function q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
-#     num = qfactorial_factored(z+1)
-#     den = qfactorial_factored(z-α1) * qfactorial_factored(z-α2) *
-#             qfactorial_factored(z-α3) * qfactorial_factored(z-α4) *
-#             qfactorial_factored(z-β1) * qfactorial_factored(z-β2) *
-#             qfactorial_factored(z-β3)
-#     return num / den
-# end
-
-
-
-
-# function q6jsummand(z,α1,α2,α3,α4,β1,β2,β3)
-#     num = qfactorial_factored(z+1)
-#     den = qfactorial_factored(z-α1) * qfactorial_factored(z-α2) *
-#             qfactorial_factored(z-α3) * qfactorial_factored(z-α4) *
-#             qfactorial_factored(z-β1) * qfactorial_factored(z-β2) *
-#             qfactorial_factored(z-β3)
-#     return num / den 
-#     # sgn = iseven(z) ? 1 : -1
-#     # return sgn, factors # sign and CycloMonomial
-#     # return FactoredMonomial( iseven(z) ? 1 : -1 , factors) 
-# end
-
-
-
-
-
-
-
-
-
 
 
 
