@@ -4,7 +4,7 @@ module QRacahSymbol
 # QRacahSymbol.jl
 using LRUCache
 
-export qracah6j, 
+export qracah6j, qracah6js,
         qδ,
         qdim, 
         SU2kModel,
@@ -37,11 +37,10 @@ Create an SU2kModel with level k, computing log-q-factorial table with BigFloat 
 Uses LRU cache to avoid recomputation.
 """
 function SU2kModel(k::Int)::SU2kModel
-    BigT = BigFloat
-    tab = get!(LOGQFACT_CACHE, (k, BigT)) do
-        logqnfact_table(k, BigT)
+    tab = get!(LOGQFACT_CACHE, (k, BigFloat)) do
+        logqnfact_table(k, BigFloat)
     end
-    return SU2kModel{BigT}(k, tab)
+    return SU2kModel{BigFloat}(k, tab)
 end
 
 # Cache for precomputed log-q-factorials: key (k, DataType) -> Vector{BigFloat}
@@ -204,11 +203,47 @@ function _qracah6j(model::SU2kModel{T}, j1, j2, j3, j4, j5, j6)::T where T
 
     zrange = max(α1, α2, α3, α4):min(β1, β2, β3)
     res = zero(BigFloat)
-    for z in zrange
+    @inbounds for z in zrange
         logTsz = logT + log_racah_summand(z, α1, α2, α3, α4, β1, β2, β3, table) 
         res += iseven(z) ? exp(logTsz) : -exp(logTsz) 
     end
     return res
+end
+
+function _qracah6j_stable(model::SU2kModel{T}, j1, j2, j3, j4, j5, j6)::T where T
+    if !qδtet(j1, j2, j3, j4, j5, j6, model.k) 
+        return zero(T)
+    end
+
+    table = model.logqnfact
+
+    logT = logqtri_coeffs(j1, j2, j3, j4, j5, j6, table)
+
+    α1 = Int(j1 + j2 + j3) 
+    α2 = Int(j1 + j5 + j6) 
+    α3 = Int(j2 + j4 + j6) 
+    α4 = Int(j3 + j4 + j5)
+    β1 = Int(j1 + j2 + j4 + j5)
+    β2 = Int(j1 + j3 + j4 + j6) 
+    β3 = Int(j2 + j3 + j5 + j6)
+
+    zrange = max(α1, α2, α3, α4):min(β1, β2, β3)
+
+    # stable alternating sum for exponential of log terms  
+    #compute max log_term
+    logmax = -Inf
+    @inbounds for z in zrange
+        logTsz = logT + log_racah_summand(z, α1, α2, α3, α4, β1, β2, β3, table)
+        logmax = max(logmax, logTsz)
+    end
+
+    res_scaled = zero(T)
+    @inbounds for z in zrange
+        logTsz = logT + log_racah_summand(z, α1, α2, α3, α4, β1, β2, β3, table)
+        res_scaled += iseven(z) ? exp(logTsz - logmax) : -exp(logTsz - logmax)
+    end
+
+    return exp(logmax) * res_scaled
 end
 
 """
@@ -222,10 +257,12 @@ when computing multiple symbols with the same k.
 qracah6j(j1, j2, j3, j4, j5, j6, k::Int) =
     _qracah6j(SU2kModel(k), j1, j2, j3, j4, j5, j6)
 
+
 qracah6j(model::SU2kModel, j1, j2, j3, j4, j5, j6) =
     _qracah6j(model, j1, j2, j3, j4, j5, j6)
 
-
+qracah6js(j1, j2, j3, j4, j5, j6, k::Int) =
+    _qracah6j_stable(SU2kModel(k), j1, j2, j3, j4, j5, j6)
 
 # ============================================================
 # R-symbols (braiding)
@@ -241,7 +278,7 @@ function rsymbol(model::SU2kModel, j1,j2,j3)::Complex{BigFloat}
         return zero(Complex{BigFloat})
     end
 
-    θ = big(pi) / (model.k + 2)
+    θ = BigFloat(pi) / (model.k + 2)
     phase = exp(im * θ *
         (j1*(j1+1) + j2*(j2+1) - j3*(j3+1)))
 
