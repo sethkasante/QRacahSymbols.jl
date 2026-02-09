@@ -269,6 +269,17 @@ when computing multiple symbols with the same k.
 qracah6j(j1, j2, j3, j4, j5, j6, k::Int) =
     _qracah6j(SU2kModel(k), j1, j2, j3, j4, j5, j6)
 
+# function qracah6j(j1, j2, j3, j4, j5, j6, k::Int)
+#     jmax = max(j1, j2, j3, j4, j5, j6)
+#     if jmax < 470
+#         _qracah6j(SU2kModel(k), j1, j2, j3, j4, j5, j6)
+#     else
+#         setprecision(BigFloat, ceil(Int,10*jmax)) do
+#             _qracah6j(SU2kModel(k), j1, j2, j3, j4, j5, j6)
+#         end
+#     end
+# end
+
 
 qracah6j(model::SU2kModel, j1, j2, j3, j4, j5, j6) =
     _qracah6j(model, j1, j2, j3, j4, j5, j6)
