@@ -95,7 +95,7 @@ Defined as:
     [n]_q = sin(nπ/(k+2)) / sin(π/(k+2))
 """
 @inline function qinteger(n::Int, k::Int)::BigFloat
-    θ = big(pi) / (k + 2)
+    θ = big(π) / (k + 2)
     return sin(n * θ) / sin(θ)
 end
 
