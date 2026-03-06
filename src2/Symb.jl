@@ -231,6 +231,7 @@ function phi_at_one(d::Int)
     return temp == 1 ? p : 1
 end
 
+#TODO: keep the results exact using BigInt like in WignerSymbols ? 
 function evaluate_classical(M::CycloMonomial)
     M.sign == 0 && return big(0) // 1
     
