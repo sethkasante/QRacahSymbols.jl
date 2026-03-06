@@ -9,7 +9,10 @@ function qdim_symb(j::Spin)
 end
 
 function qdim_exact(model::ExactSU2kModel, j::Spin)
-    return evaluate_cyclofield(qdim_symb(j), model)
+    n = Int(2j + 1)
+    # [n]_q = [n]_q! / [n-1]_q!
+    # model.q_facts is 1-indexed, so q_facts[n+1] is [n]_q!
+    return model.q_facts[n+1] * inv(model.q_facts[n])
 end
 
 function qdim_numeric(j::Spin, model::NumericSU2kModel{T})::T where {T}
@@ -21,15 +24,25 @@ end
 # 2. R-Matrix (Braiding)
 # ============================================================
 function rmatrix_symb(j1::Spin, j2::Spin, j3::Spin)
-    !δ(j1, j2, j3) && return CycloMonomial(0, 0, Int[])
+    # !δ(j1, j2, j3) && return CycloMonomial(0, 0, Int[])
+    #checks in main file 
     phase_exp = Int(j3*(j3+1) - j1*(j1+1) - j2*(j2+1))
     s = iseven(Int(j1 + j2 - j3)) ? 1 : -1
     return CycloMonomial(s, phase_exp, Int[])
 end
 
+# Inside src/TQFT.jl
+
 function rmatrix_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin)
-    return evaluate_cyclofield(rmatrix_symb(j1, j2, j3), model)
+    phase_exp = Int(j3*(j3+1) - j1*(j1+1) - j2*(j2+1))
+    s = iseven(Int(j1 + j2 - j3)) ? 1 : -1
+    
+    # Direct exponentiation in the number field
+    res = model.z^phase_exp
+    
+    return s == 1 ? res : -res
 end
+
 
 function rmatrix_numeric(j1::Spin, j2::Spin, j3::Spin, k::Int; T::Type{<:AbstractFloat}=Float64)
     phase_exp = Int(j3*(j3+1) - j1*(j1+1) - j2*(j2+1))

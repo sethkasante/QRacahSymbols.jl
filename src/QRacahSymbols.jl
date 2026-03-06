@@ -15,7 +15,7 @@ export evaluate_exact, evaluate_classical
 
 # Export Internal Handlers (Optional, for advanced users)
 export qracah6j_generic, qracah6j_exact, qracah6j_numeric, qracah6j_classical
-export qracah3j_generic, qracah3j_exact, qracah3j_numeric
+export qracah3j_generic, qracah3j_exact, qracah3j_numeric, qracah3j_classical
 
 # Include architecture files
 include("Types.jl")
@@ -43,6 +43,12 @@ Evaluates the k-independent 6j-symbol.
 Valid modes: `:generic` (Symbolic CycloMonomials) or `:classical` (Ponzano-Regge limit).
 """
 function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic)
+    # Classical/Generic Gatekeeper
+    if !δtet(j1, j2, j3, j4, j5, j6)
+        if mode == :generic return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[]) end
+        if mode == :classical return 0.0 end
+    end
+
     if mode == :classical
         return qracah6j_classical(j1, j2, j3, j4, j5, j6)
     elseif mode == :generic
@@ -52,22 +58,14 @@ function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:g
     end
 end
 
-"""
-    q6j(j1, j2, j3, j4, j5, j6, k; mode=:numeric, T=Float64, prec=256)
-
-Evaluates the quantum 6j-symbol at level k.
-Valid modes: `:numeric` (Fast Float/BigFloat) or `:exact` (Nemo Field).
-"""
 function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
-    # Route k-independent requests safely back to the other dispatcher
     if mode == :generic || mode == :classical
         return q6j(j1, j2, j3, j4, j5, j6; mode=mode) 
     end
 
-    # Admissibility Check
+    # Quantum Gatekeeper
     if !qδtet(j1, j2, j3, j4, j5, j6, k) 
         if mode == :exact
-            # Retrieve the exact model to generate the mathematically correct field zero
             model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
             return ExactResult(k, model.K(0), model.K(0))
         else
@@ -92,17 +90,24 @@ function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int;
     end
 end
 
-
 # ============================================================
 # 2. Quantum 3j Symbol
 # ============================================================
 
-# Auto-completes m3 if omitted (k-independent)
+# Auto-completes m3 if omitted
 q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin; mode=:generic) = 
     q3j(j1, j2, j3, m1, m2, -m1-m2; mode=mode)
 
 function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin; mode=:generic)
-    if mode == :generic
+    # Classical/Generic Gatekeeper
+    if !δ(j1, j2, j3) || !iszero(m1 + m2 + m3)
+        if mode == :generic return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[]) end
+        if mode == :classical return 0.0 end
+    end
+
+    if mode == :classical
+        return qracah3j_classical(j1, j2, j3, m1, m2, m3)
+    elseif mode == :generic
         return qracah3j_generic(j1, j2, j3, m1, m2, m3)
     else
         error("Mode :$mode requires a level `k`. Call as `q3j(..., m3, k; mode=:$mode)`.")
@@ -110,11 +115,11 @@ function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin; mode=:g
 end
 
 function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
-    if mode == :generic
+    if mode == :generic || mode == :classical
         return q3j(j1, j2, j3, m1, m2, m3; mode=mode)
     end
     
-    # Admissibility Check
+    # Quantum Gatekeeper
     if !qδ(j1, j2, j3, k) || !iszero(m1 + m2 + m3)
         if mode == :exact
             model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
@@ -139,12 +144,30 @@ end
 # 3. Quantum Dimensions
 # ============================================================
 
-qdim(j::Spin; mode=:generic) = qdim_symb(j)
+function qdim(j::Spin; mode=:generic)
+    if !ishalfInt(j)
+        if mode == :generic return CycloMonomial(0, 0, Int[]) end
+        if mode == :classical return 0.0 end
+    end
+    
+    if mode == :generic return qdim_symb(j) end
+    error("Mode :$mode requires a level `k`.")
+end
 
 function qdim(j::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
-    if mode == :generic return qdim(j; mode=:generic) end
+    if mode == :generic || mode == :classical return qdim(j; mode=mode) end
+    
+    # Quantum Gatekeeper: j must be a valid spin, and 2j <= k
+    if !ishalfInt(j) || (2j > k)
+        if mode == :exact
+            model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
+            return model.K(0)
+        else
+            return zero(T)
+        end
+    end
+
     if mode == :exact
-        # Use () -> syntax for clean one-liners
         model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
         return qdim_exact(model, j)
     elseif mode == :numeric
@@ -158,10 +181,29 @@ end
 # 4. Braiding (R-Matrix)
 # ============================================================
 
-rmatrix(j1::Spin, j2::Spin, j3::Spin; mode=:generic) = rmatrix_symb(j1, j2, j3)
+function rmatrix(j1::Spin, j2::Spin, j3::Spin; mode=:generic)
+    if !δ(j1, j2, j3)
+        if mode == :generic return CycloMonomial(0, 0, Int[]) end
+        if mode == :classical return 0.0 end
+    end
+    
+    if mode == :generic return rmatrix_symb(j1, j2, j3) end
+    error("Mode :$mode requires a level `k`.")
+end
 
 function rmatrix(j1::Spin, j2::Spin, j3::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
-    if mode == :generic return rmatrix(j1, j2, j3; mode=:generic) end
+    if mode == :generic || mode == :classical return rmatrix(j1, j2, j3; mode=mode) end
+    
+    # Quantum Gatekeeper
+    if !qδ(j1, j2, j3, k)
+        if mode == :exact
+            model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
+            return model.K(0)
+        else
+            return zero(T)
+        end
+    end
+
     if mode == :exact
         model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
         return rmatrix_exact(model, j1, j2, j3)
@@ -175,11 +217,28 @@ end
 # 5. Fusion & State Sum Weights (F-Symbol & G-Symbol)
 # ============================================================
 
-fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic) = 
-    fsymbol_generic(j1, j2, j3, j4, j5, j6)
+function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic)
+    if !δtet(j1, j2, j3, j4, j5, j6)
+        return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
+    end
+    
+    if mode == :generic return fsymbol_generic(j1, j2, j3, j4, j5, j6) end
+    error("Mode :$mode requires a level `k`.")
+end
 
 function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
     if mode == :generic return fsymbol(j1, j2, j3, j4, j5, j6; mode=:generic) end
+    
+    # Quantum Gatekeeper
+    if !qδtet(j1, j2, j3, j4, j5, j6, k)
+        if mode == :exact
+            model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
+            return ExactResult(k, model.K(0), model.K(0))
+        else
+            return zero(T)
+        end
+    end
+
     if mode == :exact
         model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
         return fsymbol_exact(model, j1, j2, j3, j4, j5, j6)
@@ -190,11 +249,28 @@ function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::
     error("Unknown mode: $mode")
 end
 
-gsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic) = 
-    gsymbol_generic(j1, j2, j3, j4, j5, j6)
+function gsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic)
+    if !δtet(j1, j2, j3, j4, j5, j6)
+        return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
+    end
+    
+    if mode == :generic return gsymbol_generic(j1, j2, j3, j4, j5, j6) end
+    error("Mode :$mode requires a level `k`.")
+end
 
 function gsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
     if mode == :generic return gsymbol(j1, j2, j3, j4, j5, j6; mode=:generic) end
+    
+    # Quantum Gatekeeper
+    if !qδtet(j1, j2, j3, j4, j5, j6, k)
+        if mode == :exact
+            model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
+            return ExactResult(k, model.K(0), model.K(0))
+        else
+            return zero(T)
+        end
+    end
+
     if mode == :exact
         model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
         return gsymbol_exact(model, j1, j2, j3, j4, j5, j6)

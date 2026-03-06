@@ -115,9 +115,10 @@ function q6jseries_symb(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Sp
 end
 
 function qracah6j_generic(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
-    if !δtet(j1, j2, j3, j4, j5, j6)
-        return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
-    end
+    # if !δtet(j1, j2, j3, j4, j5, j6)
+    #     return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
+    # end
+    #admissibility checks in the main file
 
     Tc2 = qtricoeff2_symb(j1, j2, j3, j4, j5, j6)
     series = q6jseries_symb(j1, j2, j3, j4, j5, j6)
@@ -171,9 +172,10 @@ function q3jseries_symb(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin)
 end
 
 function qracah3j_generic(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin = -m1-m2)
-    if !δ(j1, j2, j3) || !iszero(m1 + m2 + m3)
-        return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
-    end
+    # if !δ(j1, j2, j3) || !iszero(m1 + m2 + m3)
+    #     return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
+    # end
+    #admissibility checks in the main file!
     
     pref_sq = qdelta2_symb(j1, j2, j3) 
     pref_sq = mul_qfact(pref_sq, Int(j1+m1), 1); pref_sq = mul_qfact(pref_sq, Int(j1-m1), 1)
@@ -230,6 +232,21 @@ function qracah6j_classical(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6
     
     sumz = sum(evaluate_classical.(q6j.series))
     pref_sq_val = evaluate_classical(q6j.pref_sq)
+    
+    return Float64(sqrt(BigFloat(pref_sq_val)) * BigFloat(sumz))
+end
+
+# Inside src/Symbolics.jl
+
+function qracah3j_classical(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin = -m1-m2)
+    q3j = qracah3j_generic(j1, j2, j3, m1, m2, m3)
+    
+    if q3j.pref_sq.sign == 0
+        return 0.0
+    end
+    
+    sumz = sum(evaluate_classical.(q3j.series))
+    pref_sq_val = evaluate_classical(q3j.pref_sq)
     
     return Float64(sqrt(BigFloat(pref_sq_val)) * BigFloat(sumz))
 end
