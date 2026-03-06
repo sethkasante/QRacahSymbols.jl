@@ -157,12 +157,12 @@ end
 # Model Definitions
 # ----------------------------------------
 
-struct ExactSU2kModel
-    k::Int
-    K::AnticNumberField            
-    z::nf_elem                     # Primitive 2N-th root of unity (z = q^{1/2})
-    Phi_eval::Vector{nf_elem}  # Cached evaluations of Φ_d(z^2)
-end
+# struct ExactSU2kModel
+#     k::Int
+#     K::AnticNumberField            
+#     z::nf_elem                     # Primitive 2N-th root of unity (z = q^{1/2})
+#     Phi_eval::Vector{nf_elem}  # Cached evaluations of Φ_d(z^2)
+# end
 
 struct NumericSU2kModel
     k::Int

@@ -19,7 +19,7 @@ export q6j, qracah6j_generic, qracah6j_exact, qracah6j_numeric, qracah6j,
 include("admissible.jl")
 include("Symmetry.jl")
 include("Types.jl")
-include("Symbolics.jl")
+include("Symb.jl")
 include("ExactAlgebra.jl")
 include("Numerics.jl")
 include("TQFT.jl")
