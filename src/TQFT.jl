@@ -83,15 +83,20 @@ function qdim(j::Spin; mode=:generic)
     error("Mode :$mode requires a level `k`.")
 end
 
+# mainly for exact and numeric 
 function qdim(j::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
     if mode == :generic || mode == :classical return qdim(j; mode=mode) end
     
     # j must be a valid spin, and 2j <= k
     if !ishalfInt(j) || (2j > k)
-        #TODO:Change to haskey otherwise get K(0)
         if mode == :exact
-            model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-            return model.K(0)
+            # check cache first to avoid instantiation
+            if haskey(EXACT_MODEL_CACHE, k)
+                return EXACT_MODEL_CACHE[k].K(0)
+            else
+                K, _ = Nemo.cyclotomic_field(2*(k+2), "ζ")
+                return K(0)
+            end
         else
             return zero(T)
         end
@@ -113,6 +118,7 @@ end
 # 2. R-Matrix (Braiding)
 # ============================================================
 
+# R^{j3}_{j1,j2} phase calculation
 function rmatrix_symb(j1::Spin, j2::Spin, j3::Spin)
     phase_exp = Int(j3*(j3+1) - j1*(j1+1) - j2*(j2+1))
     s = iseven(Int(j1 + j2 - j3)) ? 1 : -1
@@ -132,39 +138,28 @@ function rmatrix_numeric(j1::Spin, j2::Spin, j3::Spin, k::Int; T::Type{<:Abstrac
     return s * cispi(T(phase_exp) / T(k + 2))
 end
 
-# ------  Public API ------
+# ------  Public API for Rmatrix Braiding  ------
+function rmatrix(j1::Spin, j2::Spin, j3::Spin, k::Union{Int, Nothing}=nothing; mode=:generic, T=Float64)
+    # gatekeeper
+    if k === nothing
+        if !δ(j1, j2, j3) 
+            return (mode == :generic ? CycloMonomial(0,0,Int[]) : 0.0)
+        end
+        
+        mode == :generic && return rmatrix_symb(j1, j2, j3)
+        error("Mode $mode requires level k")
+    else
+        if !qδ(j1, j2, j3, k) 
+            return (mode == :exact ? qint(0, k; mode=:exact) : zero(T))
+        end
 
-
-function rmatrix(j1::Spin, j2::Spin, j3::Spin; mode=:generic)
-    if !δ(j1, j2, j3)
-        if mode == :generic return CycloMonomial(0, 0, Int[]) end
-        if mode == :classical return 0.0 end
-    end
-    
-    if mode == :generic return rmatrix_symb(j1, j2, j3) end
-    error("Mode :$mode requires a level `k`.")
-end
-
-function rmatrix(j1::Spin, j2::Spin, j3::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
-    if mode == :generic || mode == :classical return rmatrix(j1, j2, j3; mode=mode) end
-    
-    # Quantum admissibility conditions
-    if !qδ(j1, j2, j3, k)
         if mode == :exact
             model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-            return model.K(0)
-        else
-            return zero(T)
+            return rmatrix_exact(model, j1, j2, j3)
+        elseif mode == :numeric
+            return rmatrix_numeric(j1, j2, j3, k; T=T)
         end
     end
-
-    if mode == :exact
-        model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-        return rmatrix_exact(model, j1, j2, j3)
-    elseif mode == :numeric
-        return rmatrix_numeric(j1, j2, j3, k; T=T)
-    end
-    error("Unknown mode: $mode")
 end
 
 
@@ -218,39 +213,36 @@ function fsymbol_numeric(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spi
     return phase * sqrt(qdim_numeric(j3, model) * qdim_numeric(j6, model)) * val_6j
 end
 
-#------ Public API ----------
+#------ Public API for F-symbols ----------
 
-function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic)
-    if !δtet(j1, j2, j3, j4, j5, j6)
-        return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
-    end
+function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Union{Int, Nothing}=nothing; 
+                 mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
     
-    if mode == :generic return fsymbol_generic(j1, j2, j3, j4, j5, j6) end
-    error("Mode :$mode requires a level `k`.")
-end
-
-function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
-    if mode == :generic return fsymbol(j1, j2, j3, j4, j5, j6; mode=:generic) end
-    
-    # Quantum Gatekeeper
-    if !qδtet(j1, j2, j3, j4, j5, j6, k)
+    # Admissibility checks
+    if k === nothing
+        if !δtet(j1, j2, j3, j4, j5, j6) 
+            return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
+        else
+            return fsymbol_generic(j1, j2, j3, j4, j5, j6)
+        end
+        error("Mode $mode requires level k")
+    else
+        # level k admissibility conditions
+        if !qδtet(j1, j2, j3, j4, j5, j6, k)
+            return (mode == :exact ? ExactResult(k, 0, 0) : zero(T))
+        end
+        
         if mode == :exact
             model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-            return ExactResult(k, model.K(0), model.K(0))
-        else
-            return zero(T)
+            return fsymbol_exact(model, j1, j2, j3, j4, j5, j6)
+        elseif mode == :numeric
+            model = NumericSU2kModel(k; T=T, prec=prec)
+            return fsymbol_numeric(model, j1, j2, j3, j4, j5, j6)
         end
+        error("Unknown mode: $mode")
     end
-
-    if mode == :exact
-        model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-        return fsymbol_exact(model, j1, j2, j3, j4, j5, j6)
-    elseif mode == :numeric
-        model = NumericSU2kModel(k; T=T, prec=prec)
-        return fsymbol_numeric(model, j1, j2, j3, j4, j5, j6)
-    end
-    error("Unknown mode: $mode")
 end
+
 
 # ============================================================
 # 4. G-Symbol (Tetrahedral Weight)
@@ -288,48 +280,33 @@ function gsymbol_numeric(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spi
 end
 
 
-# ----- Public API ----------- 
+# ----- Public API for G-symbols ----------- 
 
-function gsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic)
-    if !δtet(j1, j2, j3, j4, j5, j6)
-        return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
-    end
+function gsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Union{Int, Nothing}=nothing; 
+                 mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
     
-    if mode == :generic return gsymbol_generic(j1, j2, j3, j4, j5, j6) end
-    error("Mode :$mode requires a level `k`.")
-end
-
-"""
-    gsymbol(j1, j2, j3, j4, j5, j6, [k]; mode=:numeric)
-
-Compute the G-symbol (recoupling coefficient) for SU(2) at level k.
-The G-symbol is a normalized 6j-symbol: 
-    F^{j1 j2 j3}_{j4 j5 j6} = (-1)^{j1+j2+j4+j5} * sqrt([2j3+1][2j6+1]) * {6j}
-
-Modes:
-- `:numeric` (Default): Fast Float64/BigFloat using log-stable sums. Requires `k`.
-- `:exact`: High-precision algebraic results via Nemo.jl. Requires `k`.
-- `:generic`: Returns symbolic prime-power factorizations.
-"""
-function gsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
-    if mode == :generic return gsymbol(j1, j2, j3, j4, j5, j6; mode=:generic) end
-    
-    # Quantum Gatekeeper
-    if !qδtet(j1, j2, j3, j4, j5, j6, k)
+    # Admissibility checks
+    if k === nothing
+        if !δtet(j1, j2, j3, j4, j5, j6) 
+            return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
+        else
+            return gsymbol_generic(j1, j2, j3, j4, j5, j6)
+        end
+        error("Mode $mode requires level k")
+    else
+        # level k admissibility conditions
+        if !qδtet(j1, j2, j3, j4, j5, j6, k)
+            return (mode == :exact ? ExactResult(k, 0, 0) : zero(T))
+        end
+        
         if mode == :exact
             model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-            return ExactResult(k, model.K(0), model.K(0))
-        else
-            return zero(T)
+            return gsymbol_exact(model, j1, j2, j3, j4, j5, j6)
+        elseif mode == :numeric
+            model = NumericSU2kModel(k; T=T, prec=prec)
+            return gsymbol_numeric(model, j1, j2, j3, j4, j5, j6)
         end
+        error("Unknown mode: $mode")
     end
-
-    if mode == :exact
-        model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-        return gsymbol_exact(model, j1, j2, j3, j4, j5, j6)
-    elseif mode == :numeric
-        model = NumericSU2kModel(k; T=T, prec=prec)
-        return gsymbol_numeric(model, j1, j2, j3, j4, j5, j6)
-    end
-    error("Unknown mode: $mode")
 end
+
