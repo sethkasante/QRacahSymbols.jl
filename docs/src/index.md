@@ -19,8 +19,9 @@ pkg> add QRacahSymbols
 ## Quick Start
 The master `q6j` function dynamically dispatches to the most efficient computational engine based on whether you request a numerical level `k`, or specify a specific mode.
 
-using QRacahSymbols
+
 ```julia
+using QRacahSymbols
 # 1. Fast Numerical Evaluation (Level k=20)
 # Returns a Float64. Safe for spins up to j ≈ 450.
 val_num = q6j(1, 1, 1, 1, 1, 1, 20)
