@@ -1,85 +1,74 @@
-# src/Symbolics.jl
+# ============================================================
+# NOTE: Move this struct to src/Types.jl
+# ============================================================
+
+
+# Constructor for pre-allocating the vector capacity
+SymbolicBuffer(capacity::Int) = SymbolicBuffer(1, 0, zeros(Int, capacity))
+
+# Snapshot function to freeze the buffer into a CycloMonomial
+snapshot(buf::SymbolicBuffer) = CycloMonomial(buf.sign, buf.z_pow, copy(buf.exps))
 
 # ============================================================
 # Core Allocation-Free In-Place Operations
 # ============================================================
 
-@inline function _ensure_capacity!(exps::Vector{Int}, n::Int)
-    old_len = length(exps)
+@inline function _ensure_capacity!(buf::SymbolicBuffer, n::Int)
+    old_len = length(buf.exps)
     if n > old_len
-        resize!(exps, n)
+        resize!(buf.exps, n)
         @inbounds for i in (old_len+1):n
-            exps[i] = 0
+            buf.exps[i] = 0
         end
     end
     return nothing
 end
 
-function mul_qfact(M::CycloMonomial, n::Int, power::Int=1)
-    n <= 1 && return M
-    new_z_pow = M.z_pow + power * (-(n * (n - 1)) ÷ 2)
-    _ensure_capacity!(M.exps, n)
+function add_qfact!(buf::SymbolicBuffer, n::Int, power::Int=1)
+    n <= 1 && return nothing
+    buf.z_pow += power * (-(n * (n - 1)) ÷ 2)
+    _ensure_capacity!(buf, n)
     @inbounds for d in 2:n
-        M.exps[d] += power * div(n, d)
+        buf.exps[d] += power * div(n, d)
     end
-    return CycloMonomial(M.sign, new_z_pow, M.exps)
+    return nothing
 end
 
-function mul_qint(M::CycloMonomial, n::Int, power::Int=1)
-    n <= 1 && return M
-    new_z_pow = M.z_pow + power * (1 - n)
-    _ensure_capacity!(M.exps, n)
+function add_qint!(buf::SymbolicBuffer, n::Int, power::Int=1)
+    n <= 1 && return nothing
+    buf.z_pow += power * (1 - n)
+    _ensure_capacity!(buf, n)
     @inbounds for d in 2:n
         if n % d == 0
-            M.exps[d] += power
+            buf.exps[d] += power
         end
     end
-    return CycloMonomial(M.sign, new_z_pow, M.exps)
+    return nothing
 end
-
-# function Base.inv(M::CycloMonomial)
-#     M.sign == 0 && throw(DivideError())
-#     return CycloMonomial(M.sign, -M.z_pow, -M.exps)
-# end
 
 # ============================================================
 # Symbolic Engine (Single-Allocation Setup)
 # ============================================================
 
-function qfactorial_symb(n::Int)
-    res = CycloMonomial(1, 0, Int[])
-    return mul_qfact(res, n, 1)
+function qdelta2_symb!(buf::SymbolicBuffer, j1::Spin, j2::Spin, j3::Spin)
+    add_qfact!(buf, Int(j1+j2-j3), 1)
+    add_qfact!(buf, Int(j1-j2+j3), 1)
+    add_qfact!(buf, Int(-j1+j2+j3), 1)
+    add_qfact!(buf, Int(j1+j2+j3+1), -1)
+    return nothing
 end
 
-function qdelta2_symb(j1::Spin, j2::Spin, j3::Spin)
-    res = CycloMonomial(1, 0, Int[])
-    res = mul_qfact(res, Int(j1+j2-j3), 1)
-    res = mul_qfact(res, Int(j1-j2+j3), 1)
-    res = mul_qfact(res, Int(-j1+j2+j3), 1)
-    res = mul_qfact(res, Int(j1+j2+j3+1), -1)
-    return res
-end
-
-function qtricoeff2_symb(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
-    res = CycloMonomial(1, 0, Int[])
-    res = mul_qfact(res, Int(j1+j2-j3), 1); res = mul_qfact(res, Int(j1-j2+j3), 1); res = mul_qfact(res, Int(-j1+j2+j3), 1); res = mul_qfact(res, Int(j1+j2+j3+1), -1)
-    res = mul_qfact(res, Int(j1+j5-j6), 1); res = mul_qfact(res, Int(j1-j5+j6), 1); res = mul_qfact(res, Int(-j1+j5+j6), 1); res = mul_qfact(res, Int(j1+j5+j6+1), -1)
-    res = mul_qfact(res, Int(j2+j4-j6), 1); res = mul_qfact(res, Int(j2-j4+j6), 1); res = mul_qfact(res, Int(-j2+j4+j6), 1); res = mul_qfact(res, Int(j2+j4+j6+1), -1)
-    res = mul_qfact(res, Int(j3+j4-j5), 1); res = mul_qfact(res, Int(j3-j4+j5), 1); res = mul_qfact(res, Int(-j3+j4+j5), 1); res = mul_qfact(res, Int(j3+j4+j5+1), -1)
-    return res
+function qtricoeff2_symb!(buf::SymbolicBuffer, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
+    add_qfact!(buf, Int(j1+j2-j3), 1); add_qfact!(buf, Int(j1-j2+j3), 1); add_qfact!(buf, Int(-j1+j2+j3), 1); add_qfact!(buf, Int(j1+j2+j3+1), -1)
+    add_qfact!(buf, Int(j1+j5-j6), 1); add_qfact!(buf, Int(j1-j5+j6), 1); add_qfact!(buf, Int(-j1+j5+j6), 1); add_qfact!(buf, Int(j1+j5+j6+1), -1)
+    add_qfact!(buf, Int(j2+j4-j6), 1); add_qfact!(buf, Int(j2-j4+j6), 1); add_qfact!(buf, Int(-j2+j4+j6), 1); add_qfact!(buf, Int(j2+j4+j6+1), -1)
+    add_qfact!(buf, Int(j3+j4-j5), 1); add_qfact!(buf, Int(j3-j4+j5), 1); add_qfact!(buf, Int(-j3+j4+j5), 1); add_qfact!(buf, Int(j3+j4+j5+1), -1)
+    return nothing
 end
 
 # ============================================================
 # Racah Series (Hypergeometric Ratio Method)
 # ============================================================
-
-function q6jsummand_symb_first(z::Int, α1::Int, α2::Int, α3::Int, α4::Int, β1::Int, β2::Int, β3::Int)
-    res = CycloMonomial(iseven(z) ? 1 : -1, 0, Int[])
-    res = mul_qfact(res, z+1, 1)
-    res = mul_qfact(res, z-α1, -1); res = mul_qfact(res, z-α2, -1); res = mul_qfact(res, z-α3, -1); res = mul_qfact(res, z-α4, -1)
-    res = mul_qfact(res, β1-z, -1); res = mul_qfact(res, β2-z, -1); res = mul_qfact(res, β3-z, -1)
-    return res
-end
 
 function q6jseries_symb(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)::Vector{CycloMonomial}
     α1 = Int(j1 + j2 + j3); α2 = Int(j1 + j5 + j6) 
@@ -91,36 +80,46 @@ function q6jseries_symb(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Sp
     z_max = min(β1, β2, β3)
     
     if z_min <= z_max
-        term = q6jsummand_symb_first(z_min, α1, α2, α3, α4, β1, β2, β3)
-        push!(S_z, term)
+        # Allocate a single buffer for the entire series evaluation
+        cap = max(z_max + 1, β1 + 1, β2 + 1, β3 + 1)
+        buf = SymbolicBuffer(cap)
+        
+        # Initialize the first term
+        buf.sign = iseven(z_min) ? 1 : -1
+        add_qfact!(buf, z_min+1, 1)
+        add_qfact!(buf, z_min-α1, -1); add_qfact!(buf, z_min-α2, -1); add_qfact!(buf, z_min-α3, -1); add_qfact!(buf, z_min-α4, -1)
+        add_qfact!(buf, β1-z_min, -1); add_qfact!(buf, β2-z_min, -1); add_qfact!(buf, β3-z_min, -1)
+        
+        push!(S_z, snapshot(buf))
 
+        # Iteratively update using the ratio method
         for z in z_min+1 : z_max
-            next_term = CycloMonomial(-term.sign, term.z_pow, copy(term.exps))
+            buf.sign = -buf.sign # Alternating sum
             
-            next_term = mul_qint(next_term, z + 1, 1)
-            next_term = mul_qint(next_term, β1 - z + 1, 1)
-            next_term = mul_qint(next_term, β2 - z + 1, 1)
-            next_term = mul_qint(next_term, β3 - z + 1, 1)
+            add_qint!(buf, z + 1, 1)
+            add_qint!(buf, β1 - z + 1, 1)
+            add_qint!(buf, β2 - z + 1, 1)
+            add_qint!(buf, β3 - z + 1, 1)
             
-            next_term = mul_qint(next_term, z - α1, -1)
-            next_term = mul_qint(next_term, z - α2, -1)
-            next_term = mul_qint(next_term, z - α3, -1)
-            next_term = mul_qint(next_term, z - α4, -1)
+            add_qint!(buf, z - α1, -1)
+            add_qint!(buf, z - α2, -1)
+            add_qint!(buf, z - α3, -1)
+            add_qint!(buf, z - α4, -1)
             
-            push!(S_z, next_term)
-            term = next_term
+            push!(S_z, snapshot(buf))
         end
     end
     return S_z
 end
 
 function qracah6j_generic(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
-    # if !δtet(j1, j2, j3, j4, j5, j6)
-    #     return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
-    # end
-    #admissibility checks in the main file
-
-    Tc2 = qtricoeff2_symb(j1, j2, j3, j4, j5, j6)
+    # Estimate max factorial needed for prefactor to avoid resizes
+    cap = Int(2 * max(j1+j2+j3, j1+j5+j6, j2+j4+j6, j3+j4+j5) + 2)
+    buf = SymbolicBuffer(cap)
+    
+    qtricoeff2_symb!(buf, j1, j2, j3, j4, j5, j6)
+    Tc2 = snapshot(buf)
+    
     series = q6jseries_symb(j1, j2, j3, j4, j5, j6)
     return GenericResult(Tc2, series)
 end
@@ -128,15 +127,6 @@ end
 # ============================================================
 # Quantum 3j symbols (Optimized)
 # ============================================================
-
-function q3jsummand_symb_first(z::Int, α1::Int, α2::Int, β1::Int, β2::Int, β3::Int)
-    sign_val = isodd(Int(z + α1 - α2)) ? -1 : 1
-    res = CycloMonomial(sign_val, 0, Int[])
-    res = mul_qfact(res, z, -1)
-    res = mul_qfact(res, α1 + z, -1); res = mul_qfact(res, α2 + z, -1)
-    res = mul_qfact(res, β1 - z, -1); res = mul_qfact(res, β2 - z, -1); res = mul_qfact(res, β3 - z, -1)
-    return res
-end
 
 function q3jseries_symb(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin)
     α1 = Int(j3 - j2 + m1) 
@@ -146,84 +136,96 @@ function q3jseries_symb(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin)
     β3 = Int(j2 + m2)
 
     S_z = CycloMonomial[]
-    z_min = max(α1, α2, 0)
+    z_min = max(-α1, -α2, 0)
     z_max = min(β1, β2, β3)
 
     if z_min <= z_max
-        term = q3jsummand_symb_first(z_min, α1, α2, β1, β2, β3)
-        push!(S_z, term)
+        # Allocate single buffer
+        cap = max(z_max + max(α1, α2), β1, β2, β3) + 1
+        buf = SymbolicBuffer(cap)
+        
+        # Initialize first term
+        buf.sign = isodd(Int(z_min + α1 - α2)) ? -1 : 1
+        add_qfact!(buf, z_min, -1)
+        add_qfact!(buf, α1 + z_min, -1); add_qfact!(buf, α2 + z_min, -1)
+        add_qfact!(buf, β1 - z_min, -1); add_qfact!(buf, β2 - z_min, -1); add_qfact!(buf, β3 - z_min, -1)
+        
+        push!(S_z, snapshot(buf))
 
+        # Iteratively update
         for z in z_min+1 : z_max
-            next_term = CycloMonomial(-term.sign, term.z_pow, copy(term.exps))
+            buf.sign = -buf.sign
             
-            next_term = mul_qint(next_term, β1 - z + 1, 1)
-            next_term = mul_qint(next_term, β2 - z + 1, 1)
-            next_term = mul_qint(next_term, β3 - z + 1, 1)
+            add_qint!(buf, β1 - z + 1, 1)
+            add_qint!(buf, β2 - z + 1, 1)
+            add_qint!(buf, β3 - z + 1, 1)
             
-            next_term = mul_qint(next_term, z, -1)
-            next_term = mul_qint(next_term, α1 + z, -1)
-            next_term = mul_qint(next_term, α2 + z, -1)
+            add_qint!(buf, z, -1)
+            add_qint!(buf, α1 + z, -1)
+            add_qint!(buf, α2 + z, -1)
             
-            push!(S_z, next_term)
-            term = next_term
+            push!(S_z, snapshot(buf))
         end
     end
     return S_z
 end
 
 function qracah3j_generic(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin = -m1-m2)
-    # if !δ(j1, j2, j3) || !iszero(m1 + m2 + m3)
-    #     return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[])
-    # end
-    #admissibility checks in the main file!
+    cap = Int(j1 + j2 + j3 + abs(m1) + abs(m2) + 2)
+    buf = SymbolicBuffer(cap)
     
-    pref_sq = qdelta2_symb(j1, j2, j3) 
-    pref_sq = mul_qfact(pref_sq, Int(j1+m1), 1); pref_sq = mul_qfact(pref_sq, Int(j1-m1), 1)
-    pref_sq = mul_qfact(pref_sq, Int(j2+m2), 1); pref_sq = mul_qfact(pref_sq, Int(j2-m2), 1)
-    pref_sq = mul_qfact(pref_sq, Int(j3-m1-m2), 1); pref_sq = mul_qfact(pref_sq, Int(j3+m1+m2), 1)
+    qdelta2_symb!(buf, j1, j2, j3) 
+    add_qfact!(buf, Int(j1+m1), 1); add_qfact!(buf, Int(j1-m1), 1)
+    add_qfact!(buf, Int(j2+m2), 1); add_qfact!(buf, Int(j2-m2), 1)
+    add_qfact!(buf, Int(j3-m1-m2), 1); add_qfact!(buf, Int(j3+m1+m2), 1)
               
+    pref_sq = snapshot(buf)
     series = q3jseries_symb(j1, j2, j3, m1, m2)
     return GenericResult(pref_sq, series)
 end
 
 # ============================================================
-# Classical Evaluation (q = 1)
+# Classical Evaluation (q = 1) Limit
 # ============================================================
 
-function phi_at_one(d::Int)
-    d <= 1 && return 1
-    p = 2
-    while d % p != 0
-        p += 1
-        p * p > d && (p = d; break)
+# Fast prime power check
+function is_prime_power(n::Int)
+    # Checks if n is a prime power p^k and returns p.
+    # Assumes Nemo is exported in the main module.
+    facs = Nemo.factor(n)
+    # Collect the factorization into an array of (prime, exponent) tuples
+    pairs = collect(facs)
+    
+    # If there is exactly one prime base, it's a prime power
+    if length(pairs) == 1
+        return Int(pairs[1][1]) # Return the prime base
     end
-    temp = d
-    while temp % p == 0
-        temp ÷= p
-    end
-    return temp == 1 ? p : 1
+    return 0
 end
 
-function evaluate_classical(M::CycloMonomial)
-    M.sign == 0 && return big(0) // 1
-    num = BigInt(1)
-    den = BigInt(1)
+"""
+    evaluate_classical(m::CycloMonomial)
+Evaluates the symbolic monomial at the limit q -> 1.
+"""
+function evaluate_classical(m::CycloMonomial)
+    m.sign == 0 && return 0.0
     
-    @inbounds for d in 2:length(M.exps)
-        e = M.exps[d]
-        e == 0 && continue
-        val = phi_at_one(d)
-        val == 1 && continue 
+    # The value of \\Phi_d(1) is:
+    # - p if d = p^k (a prime power)
+    # - 1 if d has two or more distinct prime factors
+    # - 0 if d = 1 (but our d starts at 2)
+    
+    log_val = 0.0
+    for (d, exp) in enumerate(m.exps)
+        (d < 2 || exp == 0) && continue
         
-        if e > 0
-            num *= BigInt(val)^e
-        elseif e < 0
-            den *= BigInt(val)^abs(e)
+        p = is_prime_power(d) 
+        if p > 0
+            log_val += exp * log(Float64(p))
         end
     end
     
-    final_num = M.sign == -1 ? -num : num
-    return final_num // den
+    return m.sign * exp(log_val)
 end
 
 function qracah6j_classical(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
@@ -235,8 +237,6 @@ function qracah6j_classical(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6
     
     return Float64(sqrt(BigFloat(pref_sq_val)) * BigFloat(sumz))
 end
-
-# Inside src/Symbolics.jl
 
 function qracah3j_classical(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin = -m1-m2)
     q3j = qracah3j_generic(j1, j2, j3, m1, m2, m3)

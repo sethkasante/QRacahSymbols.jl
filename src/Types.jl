@@ -63,6 +63,17 @@ function Base.inv(M::CycloMonomial)
     return CycloMonomial(M.sign, -M.z_pow, -M.exps)
 end
 
+
+mutable struct SymbolicBuffer
+    sign::Int
+    z_pow::Int
+    exps::Vector{Int}
+end
+
+# Constructor for pre-allocating the vector capacity
+SymbolicBuffer(capacity::Int) = SymbolicBuffer(1, 0, zeros(Int, capacity))
+snapshot(buf::SymbolicBuffer) = CycloMonomial(buf.sign, buf.z_pow, copy(buf.exps))
+
 # ----------------------------------------
 # Human-Readable Output
 # ----------------------------------------
@@ -132,4 +143,22 @@ function Base.show(io::IO, res::ExactResult)
     print(io, "Exact SU(2)$k_sub Symbol:\n")
     print(io, "  Prefactor(Δ²): ", res.pref_sq, "\n")
     print(io, "  Racah Sum(Σ):  ", res.sum_cf)
+end
+
+function Base.:*(a::ExactResult, b::ExactResult)
+    @assert a.k == b.k "Cannot multiply results from different levels k"
+    return ExactResult(a.k, a.pref_sq * b.pref_sq, a.sum_cf * b.sum_cf)
+end
+
+function Base.:/(a::ExactResult, b::ExactResult)
+    @assert a.k == b.k "Cannot divide results from different levels k"
+    return ExactResult(a.k, a.pref_sq * inv(b.pref_sq), a.sum_cf * inv(b.sum_cf))
+end
+
+
+Base.://(a::ExactResult, b::ExactResult) = a / b
+
+# Equality check (Algebraic)
+function Base.:(==)(a::ExactResult, b::ExactResult)
+    return a.k == b.k && a.pref_sq == b.pref_sq && a.sum_cf == b.sum_cf
 end

@@ -10,7 +10,7 @@ export GenericResult, ExactResult
 export Spin
 
 # Export Primary API Functions
-export q6j, q3j, fsymbol, rmatrix, gsymbol, qdim
+export q6j, q3j, fsymbol, rmatrix, gsymbol, qint, qdim
 export evaluate_exact, evaluate_classical
 
 # Export Internal Handlers (Optional, for advanced users)
@@ -24,7 +24,7 @@ include("Symmetry.jl")
 include("Symbolics.jl")
 include("ExactAlgebra.jl")
 include("Numerics.jl")
-include("TQFT.jl")
+include("tqft.jl")
 
 # Initialize the global Evaluation & Model Caches
 const Q6J_NUMERIC_CACHE = LRU{Tuple{NTuple{6, Float64}, Int, DataType}, Any}(maxsize=50000)
@@ -43,7 +43,7 @@ Evaluates the k-independent 6j-symbol.
 Valid modes: `:generic` (Symbolic CycloMonomials) or `:classical` (Ponzano-Regge limit).
 """
 function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic)
-    # Classical/Generic Gatekeeper
+    # Classical/Generic admissible conditions (independent of k)
     if !δtet(j1, j2, j3, j4, j5, j6)
         if mode == :generic return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[]) end
         if mode == :classical return 0.0 end
@@ -69,7 +69,7 @@ function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int;
         return q6j(j1, j2, j3, j4, j5, j6; mode=mode) 
     end
 
-    # Quantum Gatekeeper
+    # Quantum admissible conditions
     if !qδtet(j1, j2, j3, j4, j5, j6, k) 
         if mode == :exact
             model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
@@ -145,6 +145,7 @@ function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin, k::Int;
         error("Unknown mode: $mode")
     end
 end
+
 
 # ============================================================
 # 3. Quantum Dimensions

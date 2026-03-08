@@ -15,6 +15,11 @@ function NumericSU2kModel(k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=25
     return NumericSU2kModel{T}(k, tab)
 end
 
+function qinteger_num(n::Int, k::Int, T::Type)
+    θ = BIG_PI / T(k+2)
+    return sin(n * θ) / sin(θ)
+end
+
 function logqn_table(k::Int, T::Type, prec::Int)::Vector{T}
     N = k + 2
     if T === Float64

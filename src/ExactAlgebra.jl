@@ -1,4 +1,4 @@
-# src/ExactAlgebra.jl
+#exactalgebra.jl
 
 struct ExactSU2kModel
     k::Int
@@ -36,6 +36,17 @@ end
 # Exact Cyclo Field Evaluations 
 # ============================================================
 
+"""
+    qinteger(n, k; mode=:exact)
+Returns the exact algebraic representation of [n]_q in Q(ζ).
+"""
+function qinteger(n::Int, k::Int; mode=:exact)
+    model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
+    #enforce [1] = 1 = [0] 
+    if n == 0 || n==1 return model.K(1) end 
+    return model.q_facts[n+1] * inv(model.q_facts[n])
+end
+
 @inline function q_delta2_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin)
     a = Int(j1 + j2 - j3); b = Int(j1 - j2 + j3)
     c = Int(-j1 + j2 + j3); d = Int(j1 + j2 + j3)
@@ -49,6 +60,39 @@ end
     return q_delta2_exact(model, j1, j2, j3) * q_delta2_exact(model, j1, j5, j6) * q_delta2_exact(model, j2, j4, j6) * q_delta2_exact(model, j3, j4, j5)
 end
 
+# function q6jseries_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
+#     α1 = Int(j1 + j2 + j3); α2 = Int(j1 + j5 + j6) 
+#     α3 = Int(j2 + j4 + j6); α4 = Int(j3 + j4 + j5)
+#     β1 = Int(j1 + j2 + j4 + j5); β2 = Int(j1 + j3 + j4 + j6); β3 = Int(j2 + j3 + j5 + j6)
+    
+#     zrange = max(α1, α2, α3, α4):min(β1, β2, β3, model.k) 
+    
+#     # Pre-allocate mutatable memory buffers for the loop
+#     sum_cf = model.K(0)
+#     term   = model.K(0)
+#     den    = model.K(0)
+
+#     @inbounds for z in zrange
+#         # In-place multiplications: den = a * b * c ...
+#         Nemo.mul!(den, model.q_facts[z-α1+1], model.q_facts[z-α2+1])
+#         Nemo.mul!(den, den, model.q_facts[z-α3+1])
+#         Nemo.mul!(den, den, model.q_facts[z-α4+1])
+#         Nemo.mul!(den, den, model.q_facts[β1-z+1])
+#         Nemo.mul!(den, den, model.q_facts[β2-z+1])
+#         Nemo.mul!(den, den, model.q_facts[β3-z+1])
+        
+#         # In-place exact division: term = num / den
+#         Nemo.divexact!(term, model.q_facts[z+2], den)
+        
+#         # In-place addition/subtraction
+#         if iseven(z)
+#             Nemo.add!(sum_cf, sum_cf, term)
+#         else
+#             Nemo.sub!(sum_cf, sum_cf, term)
+#         end
+#     end
+#     return sum_cf
+# end
 function q6jseries_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
     α1 = Int(j1 + j2 + j3); α2 = Int(j1 + j5 + j6) 
     α3 = Int(j2 + j4 + j6); α4 = Int(j3 + j4 + j5)
@@ -67,13 +111,11 @@ function q6jseries_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, j4
     return sum_cf
 end
 
-
 function qracah6j_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
     Tc2 = qtricoeff2_exact(model, j1, j2, j3, j4, j5, j6)
     Sum_cf = q6jseries_exact(model, j1, j2, j3, j4, j5, j6)
     return ExactResult(model.k, Tc2, Sum_cf)
 end
-
 
 # ============================================================
 # Exact Quantum 3j Symbol
@@ -81,12 +123,10 @@ end
 
 @inline function q3j_pref_sq_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin)
     delta2 = q_delta2_exact(model, j1, j2, j3)
-    
-    # Exact memory lookups for the 6 factorials
     facts = model.q_facts[Int(j1+m1)+1] * model.q_facts[Int(j1-m1)+1] * model.q_facts[Int(j2+m2)+1] * model.q_facts[Int(j2-m2)+1] * model.q_facts[Int(j3-m1-m2)+1] * model.q_facts[Int(j3+m1+m2)+1]
-            
     return delta2 * facts
 end
+
 
 function q3jseries_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin)
     α1 = Int(j3 - j2 + m1) 
@@ -114,44 +154,103 @@ function q3jseries_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, m1
 end
 
 function qracah3j_exact(model::ExactSU2kModel, j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin)
-    # The m-admissibility validated in the main file
     pref_sq = q3j_pref_sq_exact(model, j1, j2, j3, m1, m2)
     Sum_cf = q3jseries_exact(model, j1, j2, j3, m1, m2)
-    
     return ExactResult(model.k, pref_sq, Sum_cf)
 end
-
-
 
 # ============================================================
 # Float Projection (Horner's Method)
 # ============================================================
 
-function evaluate_exact(res::ExactResult, prec::Int=256)
-    if res.pref_sq == 0 && res.sum_cf == 0
-        return zero(BigFloat)
+# ============================================================
+# Float Projection (Horner's Method)
+# ============================================================
+
+# function evaluate_exact(res::ExactResult; prec=256)
+#     # Scope the precision strictly to this evaluation
+#     setprecision(BigFloat, prec) do
+#         target_z = exp(im * big(π) / (res.k + 2))
+        
+#         val_sum = horner_eval(res.sum_cf, target_z)
+#         val_pref_sq = horner_eval(res.pref_sq, target_z)
+        
+#         # Mathematically, pref_sq is strictly positive. 
+#         # Using abs() perfectly ignores tiny imaginary/negative floating-point artifacts.
+#         val_pref = sqrt(abs(val_pref_sq))
+        
+#         return val_pref * val_sum
+#     end
+# end
+
+# function horner_eval(poly_elem, z::Complex{BigFloat})
+#     # Handle pure rational numbers safely
+#     if poly_elem isa Nemo.QQFieldElem
+#         num = BigFloat(BigInt(numerator(poly_elem)))
+#         den = BigFloat(BigInt(denominator(poly_elem)))
+#         return Complex{BigFloat}(num / den)
+#     end
+    
+#     # Extract coefficients safely ensuring NO Float64 truncation
+#     deg = degree(parent(poly_elem))
+#     res = Complex{BigFloat}(0.0)
+    
+#     for i in (deg-1):-1:0
+#         c = coeff(poly_elem, i)
+        
+#         # Cast Nemo fmpz -> Julia BigInt -> Julia BigFloat
+#         num = BigFloat(BigInt(numerator(c)))
+#         den = BigFloat(BigInt(denominator(c)))
+#         c_val = num / den
+        
+#         res = res * z + c_val
+#     end
+    
+#     return res
+# end
+
+"""
+    evaluate_exact(res::ExactResult, [T=Complex{BigFloat}]; prec=256)
+Projects an exact algebraic result into a floating-point number.
+Defaults to Complex{BigFloat}. Can be cast to Float64, ComplexF64, etc.
+"""
+function evaluate_exact(res::ExactResult, ::Type{T}=Complex{BigFloat}; prec=256) where {T}
+    # Calculate in high precision
+    val = setprecision(BigFloat, prec) do
+        target_z = cis(BIG_PI / (res.k + 2))
+        val_sum = horner_eval(res.sum_cf, target_z)
+        val_pref_sq = horner_eval(res.pref_sq, target_z)
+        
+        val_pref = sqrt(abs(val_pref_sq))
+        return val_pref * val_sum
     end
     
-    setprecision(BigFloat, prec) do
-        N = res.k + 2
-        target_z = cispi(big"1.0" / N)
-        
-        sum_bf = horner_eval(res.sum_cf, target_z)
-        pref2_bf = horner_eval(res.pref_sq, target_z)
-        
-        return real(sqrt(pref2_bf) * sum_bf)
+    # Intelligently cast based on the requested type T
+    if T <: Real
+        # For Real types (e.g., Float64), we assume the imaginary part is numerical noise
+        return T(real(val))
+    else
+        # For Complex types, we return the full value
+        return T(val)
     end
 end
 
-function horner_eval(ev::nf_elem, root_val::Complex{BigFloat})
-    d = degree(parent(ev)) - 1
-    d < 0 && return zero(Complex{BigFloat})
-    
-    res = Complex{BigFloat}(coeff(ev, d))
-    for i in (d-1):-1:0
-        c = coeff(ev, i)
-        val = BigFloat(Nemo.numerator(c)) / BigFloat(Nemo.denominator(c))
-        res = res * root_val + val
+function evaluate_exact(res::ExactResult; prec=256)
+    target_z = exp(im * big(π) / (res.k + 2))
+    val_sum = horner_eval(res.sum_cf, target_z)
+    val_pref_sq = horner_eval(res.pref_sq, target_z)
+    val_pref = sqrt(max(real(val_pref_sq), 0.0))
+    return val_pref * val_sum
+end
+
+function horner_eval(poly_elem, z::Complex{BigFloat})
+    if poly_elem isa Nemo.QQFieldElem
+        return Complex{BigFloat}(BigFloat(numerator(poly_elem)) / BigFloat(denominator(poly_elem)))
+    end
+    coeffs = [BigFloat(coeff(poly_elem, i)) for i in 0:degree(parent(poly_elem))-1]
+    res = Complex{BigFloat}(0.0)
+    for i in length(coeffs):-1:1
+        res = res * z + coeffs[i]
     end
     return res
 end
