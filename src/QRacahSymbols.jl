@@ -38,48 +38,45 @@ const EXACT_MODEL_CACHE = LRU{Int, ExactSU2kModel}(maxsize=20)
 # ============================================================
 
 """
-    q6j(j1, j2, j3, j4, j5, j6; mode=:generic)
+    q6j(j1, j2, j3, j4, j5, j6, [k]; mode=:generic, T=Float64, prec=256)
 
-Evaluates the k-independent 6j-symbol. 
-Valid modes: `:generic` (Symbolic CycloMonomials) or `:classical` (Ponzano-Regge limit).
+Evaluates the quantum 6j-symbol. 
+If `k` is omitted, only `:generic` and `:classical` modes are valid.
 """
-function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin; mode=:generic)
-    # Classical/Generic admissible conditions (independent of k)
-    if !δtet(j1, j2, j3, j4, j5, j6)
-        if mode == :generic return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[]) end
-        if mode == :classical return 0.0 end
-    end
+function q6j end
 
-    if mode == :classical
-        return qracah6j_classical(j1, j2, j3, j4, j5, j6)
-    elseif mode == :generic
-        return qracah6j_generic(j1, j2, j3, j4, j5, j6)
-    else
-        error("Mode :$mode requires a level `k`. Call as `q6j(..., k; mode=:$mode)`.")
-    end
-end
-
-"""
-    q6j(j1, j2, j3, j4, j5, j6; k::Int, mode=:numeric)
-
-Evaluates the k-independent 6j-symbol. 
-Valid modes: `:generic` (Symbolic CycloMonomials) or `:classical` (Ponzano-Regge limit).
-"""
-function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
+function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::OptInt=nothing; 
+             mode=:generic, T::Type{<:AbstractFloat}=Float64, prec=256)
+    
+    # 1. k-Independent Modes (:generic, :classical)
     if mode == :generic || mode == :classical
-        return q6j(j1, j2, j3, j4, j5, j6; mode=mode) 
+        if !δtet(j1, j2, j3, j4, j5, j6)
+            return mode == :generic ? GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[]) : 0.0
+        end
+        return mode == :generic ? qracah6j_generic(j1, j2, j3, j4, j5, j6) : qracah6j_classical(j1, j2, j3, j4, j5, j6)
+    end
+    
+    # 2. k-Dependent Modes (:numeric, :exact)
+    if k === nothing
+        throw(ArgumentError("Mode :$mode requires a level `k`."))
     end
 
-    # Quantum admissible conditions
+    # Quantum admissibility checks
     if !qδtet(j1, j2, j3, j4, j5, j6, k) 
         if mode == :exact
-            model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-            return ExactResult(k, model.K(0), model.K(0))
+            # Fast zero-return without building the full model if not cached
+            if haskey(EXACT_MODEL_CACHE, k)
+                return ExactResult(k, EXACT_MODEL_CACHE[k].K(0), EXACT_MODEL_CACHE[k].K(0))
+            else
+                K, _ = Nemo.cyclotomic_field(2 * (k + 2), "ζ")
+                return ExactResult(k, K(0), K(0))
+            end
         else
             return zero(T)
         end
     end
 
+    # Cache execution - canonical spins
     c_spins = canonical_spins(j1, j2, j3, j4, j5, j6)
     
     if mode == :exact
@@ -93,44 +90,54 @@ function q6j(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int;
             _qracah6j_stable(model, c_spins...)
         end
     else
-        error("Unknown mode: $mode")
+        throw(ArgumentError("Unknown mode: $mode"))
     end
 end
+
 
 # ============================================================
 # 2. Quantum 3j Symbol
 # ============================================================
 
-# Auto-completes m3 if omitted
-q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin; mode=:generic) = 
-    q3j(j1, j2, j3, m1, m2, -m1-m2; mode=mode)
+"""
+    q3j(j1, j2, j3, m1, m2, [m3], [k]; mode=:generic)
 
-function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin; mode=:generic)
-    # Classical/Generic Gatekeeper
-    if !δ(j1, j2, j3) || !iszero(m1 + m2 + m3)
-        if mode == :generic return GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[]) end
-        if mode == :classical return 0.0 end
-    end
+Evaluates the quantum 3j-symbol. 
+If `m3` is omitted, it defaults to `-m1-m2`.
+"""
+function q3j end
 
-    if mode == :classical
-        return qracah3j_classical(j1, j2, j3, m1, m2, m3)
-    elseif mode == :generic
-        return qracah3j_generic(j1, j2, j3, m1, m2, m3)
-    else
-        error("Mode :$mode requires a level `k`. Call as `q3j(..., m3, k; mode=:$mode)`.")
-    end
-end
+# Helper to auto-complete m3 if it's omitted
+# Note: If the user passes `k`, they MUST provide `m3` explicitly, otherwise 
+# Julia will confuse `k` for `m3` due to positional argument rules.
+q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin; kwargs...) = 
+    q3j(j1, j2, j3, m1, m2, -m1-m2, nothing; kwargs...)
 
-function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin, k::Int; mode=:numeric, T::Type{<:AbstractFloat}=Float64, prec=256)
+function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin, k::OptInt=nothing; 
+             mode=:generic, T::Type{<:AbstractFloat}=Float64, prec=256)
+    
+    # 1. k-Independent Modes
     if mode == :generic || mode == :classical
-        return q3j(j1, j2, j3, m1, m2, m3; mode=mode)
+        if !δ(j1, j2, j3) || !iszero(m1 + m2 + m3)
+            return mode == :generic ? GenericResult(CycloMonomial(0, 0, Int[]), CycloMonomial[]) : 0.0
+        end
+        return mode == :generic ? qracah3j_generic(j1, j2, j3, m1, m2, m3) : qracah3j_classical(j1, j2, j3, m1, m2, m3)
     end
     
-    # Quantum Gatekeeper
+    # 2. k-dependent modes
+    if k === nothing
+        throw(ArgumentError("Mode :$mode requires a level `k`."))
+    end
+    
+    # Quantum admissibility checks
     if !qδ(j1, j2, j3, k) || !iszero(m1 + m2 + m3)
         if mode == :exact
-            model = get!(() -> ExactSU2kModel(k), EXACT_MODEL_CACHE, k)
-            return ExactResult(k, model.K(0), model.K(0))
+            if haskey(EXACT_MODEL_CACHE, k)
+                return ExactResult(k, EXACT_MODEL_CACHE[k].K(0), EXACT_MODEL_CACHE[k].K(0))
+            else
+                K, _ = Nemo.cyclotomic_field(2 * (k + 2), "ζ")
+                return ExactResult(k, K(0), K(0))
+            end
         else
             return zero(T)
         end
@@ -143,7 +150,7 @@ function q3j(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, m3::Spin, k::Int;
         model = NumericSU2kModel(k; T=T, prec=prec)
         return _qracah3j_stable(model, j1, j2, j3, m1, m2)
     else
-        error("Unknown mode: $mode")
+        throw(ArgumentError("Unknown mode: $mode"))
     end
 end
 

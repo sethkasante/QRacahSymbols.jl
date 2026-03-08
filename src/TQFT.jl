@@ -239,7 +239,7 @@ function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::
             model = NumericSU2kModel(k; T=T, prec=prec)
             return fsymbol_numeric(model, j1, j2, j3, j4, j5, j6)
         end
-        error("Unknown mode: $mode")
+        throw(ArgumentError("Unknown mode: $mode"))
     end
 end
 
@@ -306,7 +306,7 @@ function gsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::
             model = NumericSU2kModel(k; T=T, prec=prec)
             return gsymbol_numeric(model, j1, j2, j3, j4, j5, j6)
         end
-        error("Unknown mode: $mode")
+        throw(ArgumentError("Unknown mode: $mode"))
     end
 end
 

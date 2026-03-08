@@ -2,6 +2,7 @@
 
 # Define a robust type alias for Spins to eliminate method ambiguities
 const Spin = Real
+const OptInt = Union{Nothing, Int}
 
 """
     CycloMonomial
