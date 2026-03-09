@@ -117,7 +117,7 @@ end
 
 
 # ============================================================
-# 2. R-Matrix (Braiding)
+# R-Matrix (Braiding)
 # ============================================================
 
 # R^{j3}_{j1,j2} phase calculation
@@ -154,8 +154,12 @@ function rmatrix(j1::Spin, j2::Spin, j3::Spin, k::OptInt=nothing;
         if !δ(j1, j2, j3) 
             return (mode == :generic ? CycloMonomial(0,0,Int[]) : 0.0)
         end
-        
-        mode == :generic && return rmatrix_symb(j1, j2, j3) : 1.0
+        # admissibility passed
+        if mode == :generic 
+            return rmatrix_symb(j1, j2, j3)
+        else #classical
+            iseven(Int(j1 + j2 - j3)) ? 1 : -1
+        end
     end
 
     if k === nothing
@@ -177,7 +181,7 @@ end
 
 
 # ============================================================
-# 3. F-Symbol (Fusion / Normalized 6j)
+# F-Symbol (Fusion / Normalized 6j)
 # ============================================================
 
 function fsymbol_generic(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
@@ -272,9 +276,9 @@ function fsymbol(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::
 end
 
 
-# ============================================================
-# 4. G-Symbol (Tetrahedral Weight)
-# ============================================================
+# ================================
+# G-Symbol (Tetrahedral Weight)
+# ================================
 
 function gsymbol_generic(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)
     res_6j = qracah6j_generic(j1, j2, j3, j4, j5, j6)
