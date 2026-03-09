@@ -9,13 +9,13 @@
 Standard hypergeometric evaluations of quantum Racah symbols suffer from catastrophic cancellation and floating-point overflow at high spins. **QRacahSymbols.jl** solves this by introducing a highly optimized **Three-Tier Architecture**, allowing researchers to seamlessly jump between fast floating-point tensor contractions and zero-precision-loss algebraic number field evaluations.
 
 ## The Catastrophic Cancellation Problem (and Solution)
-For large spins (e.g., j = 500), the alternating Racah sums generate massive intermediate values (up to 10^60). Standard numerical libraries suffer complete precision collapse. `QRacahSymbols.jl` bypasses this by calculating the symbolic cyclotomic polynomial representation, canceling terms algebraically *before* numerical evaluation:
+For large spins (e.g., $j = 500$), the alternating Racah sums generate massive intermediate values (up to $10^60$). Standard numerical libraries suffer complete precision collapse. `QRacahSymbols.jl` bypasses this by calculating the symbolic cyclotomic polynomial representation, canceling terms algebraically *before* numerical evaluation:
 
 ## Core Features
 
 * **The 3-Tier Engine**:
   * `Numeric`: Ultrafast table-based evaluation using log-sum-exp stabilization procedure. Safe from factorial overflow up to massive spins ($j \approx 450$, for $k > 20,000$).
-  * `Exact`: Zero-precision-loss algebraic evaluation mapping strictly into `Nemo.jl` cyclotomic number fields $(\mathbb{Q}(\zeta_{2N}))$.
+  * `Exact`: Zero-precision-loss algebraic evaluation mapping strictly into `Nemo.jl` cyclotomic number fields $(\mathbb{Q}(\zeta_{2N}))$. $\mathbb Q(\zeta_{2(k+2)})$.
   * `Generic`: Pure symbolic factorization into dense integer arrays of `CycloMonomial` representations.
 * **TQFT Category Suite**: Natively evaluates Quantum Dimensions, R-matrices (braiding), F-symbols (fusion), and G-symbols (tetrahedral weights).
 * **Geometric Canonicalization**: Internally exploits the 24-fold $S_4$ tetrahedral symmetry and massive LRU caches to bypass redundant computations in $O(1)$ time.
