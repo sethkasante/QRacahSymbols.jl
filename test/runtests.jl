@@ -42,7 +42,7 @@ using QRacahSymbols
         
         # Evaluate Exact and Generic to Float64
         val_ext_float = evaluate_exact(res_ext, Float64)
-        val_gen_float = evaluate_generic(res_gen, k,Float64)
+        val_gen_float = evaluate_level(res_gen, k,Float64)
         
         # All three must match perfectly
         @test isapprox(val_num, val_ext_float, atol=1e-12)
@@ -97,7 +97,7 @@ using QRacahSymbols
         kk = 100
         
         qs6 = q6j(jj, jj, jj, jj, jj, jj; mode=:generic)
-        val_symb = evaluate_generic(qs6, kk, Float64; prec=256)
+        val_symb = evaluate_level(qs6, kk, Float64; prec=256)
         val_num  = q6j(jj, jj, jj, jj, jj, jj, kk; mode=:numeric)
         
         @test isapprox(val_symb, val_num, atol=1e-10)
