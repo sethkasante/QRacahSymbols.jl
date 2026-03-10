@@ -12,6 +12,7 @@ export Spin
 # Internal Handlers for advanced usage
 export qracah6j_generic, qracah6j_exact, qracah6j_numeric, qracah6j_classical
 export qracah3j_generic, qracah3j_exact, qracah3j_numeric, qracah3j_classical
+export evaluate_level, evaluate_analytic
 export clear_caches!
 
 
