@@ -24,18 +24,25 @@ The master `q6j` function dynamically dispatches to the most efficient computati
 using QRacahSymbols
 # 1. Fast Numerical Evaluation (Level k=20)
 # Returns a Float64. Safe for spins up to j ≈ 450.
-val_num = q6j(1, 1, 1, 1, 1, 1, 20)
+julia> q6j(1, 1, 1, 1, 1, 1, 20)
+0.1640608932500723
+
 
 # 2. Exact Algebraic Evaluation
 # Returns a self-contained ExactValue holding a Nemo cyclotomic polynomial.
-val_exact = q6j(1, 1, 1, 1, 1, 1, 20; mode=:exact)
+julia> q6j(1, 1, 1, 1, 1, 1, 20; mode=:exact)
+Exact SU(2)₂₀ Symbol:
+  Prefactor(Δ²): 2987//11*ζ^18 - 3880//11*ζ^16 + 1695//11*ζ^14 + 962//11*ζ^12 - 962//11*ζ^10 - 1695//11*ζ^8 + 3880//11*ζ^6 - 2987//11*ζ^4 + 1626//11
+  Racah Sum(Σ):  -27*ζ^18 + 7*ζ^16 - 19*ζ^14 + 14*ζ^12 - 14*ζ^10 + 19*ζ^8 - 7*ζ^6 + 27*ζ^4 + 31
 
 # 3. Symbolic Cyclotomic Factorization
 # Operates purely algebraically, bypassing all floating-point limitations.
-val_symb = q6j(1, 1, 1, 1, 1, 1; mode=:generic)
+julia> val_symb = q6j(1, 1, 1, 1, 1, 1; mode=:generic)
+√(z²⁴ Φ₂⁻⁸ Φ₃⁻⁴ Φ₄⁻⁴) × (-z⁻⁶ Φ₂² Φ₃ Φ₄  +  z⁻¹⁰ Φ₂² Φ₃ Φ₄ Φ₅)
 
 # You can evaluate the symbolic result at a specific level k later:
-evaluate_generic(val_symb, 20, Float64; prec=512)
+julia> evaluate_generic(val_symb, 20, Float64)
+0.1640608932500723
 ```
 
 ## Next Steps
