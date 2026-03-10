@@ -294,8 +294,14 @@ function evaluate_phi_stable(d::Int, k::Int)
 end
 
 
+
+
+# ----- Internal Dispatch: Physical Level k (Discrete Geometry) --- #
+
+
 function evaluate_level(m::CycloMonomial, k::Int, ::Type{T}=Complex{BigFloat}; prec=512) where {T}
     m.sign == 0 && return zero(T)
+    
     # O(1) Algebraic Zero/Pole Check
     if length(m.exps) >= k + 2
         exponent = m.exps[k+2]
@@ -318,7 +324,7 @@ function evaluate_level(m::CycloMonomial, k::Int, ::Type{T}=Complex{BigFloat}; p
         
         # Add contributions from cyclotomic factors
         for (d, e) in enumerate(m.exps)
-            (e == 0 || d < 1) && continue
+            (e == 0 || d < 1 || d == k + 2) && continue
             
             # Fetch strictly by (d, k)
             log_mag_phi, phase_phi = evaluate_phi_stable(d, k)
@@ -332,54 +338,22 @@ function evaluate_level(m::CycloMonomial, k::Int, ::Type{T}=Complex{BigFloat}; p
     end
 end
 
-function evaluate_analytic(m::CycloMonomial, q::Number, ::Type{T}=Complex{BigFloat}; prec=512) where {T}
-    m.sign == 0 && return zero(T)
-    
-    # Evaluate z = q^(1/2) for the phase prefactor
-    z = sqrt(Complex(q))
-    val = Complex{BigFloat}(m.sign) * (z ^ m.z_pow)
-    
-    for (d, e) in enumerate(m.exps)
-        (e == 0 || d < 1) && continue
-        poly_val = evaluate_cyclotomic(d, q) # Evaluates Φ_d(q)
-        val *= poly_val ^ e
-    end
-    
-    return T(val)
-end
-
-"""
-    evaluate_generic(m::CycloMonomial, k::Int, ::Type{T}=Complex{BigFloat}; prec=512)
-
-Evaluates a symbolic cyclotomic monomial using log-sum-exp for numerical stability.
-"""
-function evaluate_generic(m::CycloMonomial, ::Type{T}=Complex{BigFloat}; k=OptInt, q=OptInt, prec=512) where {T}
-    # 1. Intent Validation
-    if (isnothing(k) && isnothing(q)) || (!isnothing(k) && !isnothing(q))
-        throw(ArgumentError("Ambiguous evaluation. You must specify exactly one target: either `k=val` or `q=val`."))
-    end
-
-    # 2. Physical Level Evaluation (Discrete Geometry)
-    if !isnothing(k)
-        evaluate_level(m, k, T; prec=prec)
-    else
-        evaluate_analytic(m, q, T; prec=prec)
-    end
-end
-
-
 function evaluate_level(res::GenericResult, k::Int, ::Type{T}=Complex{BigFloat}; prec=512) where {T}
     res.pref_sq.sign == 0 && return zero(T)
 
     return setprecision(BigFloat, prec) do
-        # 1. Squared prefactor -> take sqrt(abs())
+        # 1. Squared prefactor -> take sqrt(abs()) since physical volume^2 is real
         val_pref_sq = evaluate_level(res.pref_sq, k, Complex{BigFloat}; prec=prec)
+        
+        # If the prefactor evaluates to an exact zero (via the d=k+2 check), abort early
+        iszero(val_pref_sq) && return zero(T)
+        
         val_pref = sqrt(abs(val_pref_sq))
 
-        # 2. Sum the Racah series
+        # 2. Sum the Racah series (Call internal function directly for performance)
         val_sum = zero(Complex{BigFloat})
         for term in res.series
-            val_sum += evaluate_generic(term, k, Complex{BigFloat}; prec=prec)
+            val_sum += evaluate_level(term, k, Complex{BigFloat}; prec=prec)
         end
 
         # 3. Combine
@@ -394,54 +368,90 @@ function evaluate_level(res::GenericResult, k::Int, ::Type{T}=Complex{BigFloat};
     end
 end
 
+
+# ----- Internal Dispatch: Analytic Continuation (Continuous Parameter) --- #
+
+function evaluate_analytic(m::CycloMonomial, q::Number, ::Type{T}=Complex{BigFloat}; prec=512) where {T}
+    m.sign == 0 && return zero(T)
+    
+    return setprecision(BigFloat, prec) do
+        # Evaluate z = q^(1/2) for the phase prefactor
+        z = sqrt(Complex(q))
+        val = Complex{BigFloat}(m.sign) * (z ^ m.z_pow)
+        
+        for (d, e) in enumerate(m.exps)
+            (e == 0 || d < 1) && continue
+            poly_val = evaluate_cyclotomic(d, q) # Evaluates Φ_d(q)
+            val *= poly_val ^ e
+        end
+        
+        return T(val)
+    end
+end
 
 function evaluate_analytic(res::GenericResult, q::Number, ::Type{T}=Complex{BigFloat}; prec=512) where {T}
     res.pref_sq.sign == 0 && return zero(T)
-   
     
     return setprecision(BigFloat, prec) do
-        # 1. Squared prefactor -> take sqrt(abs())
+        # 1. Squared prefactor
         val_pref_sq = evaluate_analytic(res.pref_sq, q, Complex{BigFloat}; prec=prec)
 
-        # If the prefactor evaluates to an exact zero (via the d=k+2 check), abort early
+        # Abort early if the polynomial evaluates exactly to zero at this arbitrary q
         iszero(val_pref_sq) && return zero(T)
 
-        val_pref = sqrt(abs(val_pref_sq))
+        # Do NOT take abs() here; preserve complex branch cuts for analytic continuation
+        val_pref = sqrt(val_pref_sq)
 
-        # 2. Sum the Racah series
+        # 2. Sum the Racah series (Call internal function directly for performance)
         val_sum = zero(Complex{BigFloat})
         for term in res.series
-            val_sum += evaluate_generic(term, q, Complex{BigFloat}; prec=prec)
+            val_sum += evaluate_analytic(term, q, Complex{BigFloat}; prec=prec)
         end
 
         # 3. Combine
         final_val = val_pref * val_sum
         
-        # 4. Safe casting
-        if T <: Real
-            return T(real(final_val))
-        else
-            return T(final_val)
-        end
+        return T(final_val)
     end
 end
 
 
-"""
-    evaluate_generic(res::GenericResult, k::Int, ::Type{T}=Complex{BigFloat}; prec=512)
+# Public API: Unified Evaluation Interface
 
-Evaluates a full 3j or 6j GenericResult at level k.
 """
-function evaluate_generic(res::GenericResult, ::Type{T}=Complex{BigFloat}; k=OptInt, q=OptInt, prec=512) where {T}
-    # 1. Intent Validation
+    evaluate_generic(m::CycloMonomial, ::Type{T}=Complex{BigFloat}; k=nothing, q=nothing, prec=512)
+
+Evaluates a symbolic CycloMonomial. You must specify exactly one evaluation target:
+- `k=val`: Evaluates at the physical root of unity q = exp(iπ/(k+2)), enforcing SU(2)_k topological checks.
+- `q=val`: Evaluates analytically at a generic complex or real parameter.
+"""
+function evaluate_generic(m::CycloMonomial, ::Type{T}=Complex{BigFloat}; k=nothing, q=nothing, prec=512) where {T}
     if (isnothing(k) && isnothing(q)) || (!isnothing(k) && !isnothing(q))
         throw(ArgumentError("Ambiguous evaluation. You must specify exactly one target: either `k=val` or `q=val`."))
     end
 
-    # 2. Physical Level Evaluation (Discrete Geometry)
     if !isnothing(k)
-        evaluate_level(res, k, T; prec=prec)
+        return evaluate_level(m, k, T; prec=prec)
     else
-        evaluate_analytic(res, q, T; prec=prec)
+        return evaluate_analytic(m, q, T; prec=prec)
+    end
+end
+
+"""
+    evaluate_generic(res::GenericResult, ::Type{T}=Complex{BigFloat}; k=nothing, q=nothing, prec=512)
+
+Evaluates a full 3j or 6j GenericResult. You must specify exactly one evaluation target:
+- `k=val`: Evaluates at the physical root of unity, ensuring exact algebraic cancellation.
+- `q=val`: Analytically continues the quantum symbol to an arbitrary complex parameter.
+"""
+function evaluate_generic(res::GenericResult, ::Type{T}=Complex{BigFloat}; k=nothing, q=nothing, prec=512) where {T}
+    if (isnothing(k) && isnothing(q)) || (!isnothing(k) && !isnothing(q))
+        throw(ArgumentError("Ambiguous evaluation. You must specify exactly one target: either `k=val` or `q=val`."))
+    end
+
+    if !isnothing(k)
+        return evaluate_level(res, k, T; prec=prec)
+    else
+        return evaluate_analytic(res, q, T; prec=prec)
     end
 end
