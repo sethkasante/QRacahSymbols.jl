@@ -4,4 +4,5 @@
 ```@autodocs
 Modules = [QRacahSymbols]
 Order   = [:function, :type]
+Public  = true
 ```

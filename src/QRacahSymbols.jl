@@ -56,11 +56,24 @@ end
 # Quantum 6j Symbol
 # ============================================================
 
+
 """
     q6j(j1, j2, j3, j4, j5, j6, [k]; mode=:generic, T=Float64, prec=256)
 
-Evaluates the quantum 6j-symbol. 
-If `k` is omitted, only `:generic` and `:classical` modes are valid.
+Evaluates the quantum 6j-symbol for the SU(2)_k fusion category.
+
+# Arguments
+- `j1` to `j6`: The six half-integer spins of the tetrahedron.
+- `k`: (Optional) The level of the quantum group. Required for `:numeric` and `:exact` modes.
+
+# Keyword Arguments
+- `mode`: Determines the computational engine.
+  - `:generic` (default): Returns an exact `GenericResult` polynomial array (k-independent if k is omitted).
+  - `:numeric`: Returns a fast floating-point evaluation.
+  - `:exact`: Returns an exact algebraic representation in the cyclotomic field Q(ζ).
+  - `:classical`: Returns the un-deformed Ponzano-Regge 6j-symbol limit (q → 1).
+- `T`: The floating-point type for `:numeric` mode (default `Float64`).
+- `prec`: The BigFloat precision used in internal calculations for `:numeric` mode.
 """
 function q6j end
 
@@ -173,9 +186,9 @@ end
 
 
 
-# ============================================================
+# ===========================
 # Quantum Dimensions
-# ============================================================
+# ===========================
 
 """
     qint(n::Int; mode=:generic)
@@ -191,9 +204,9 @@ function qint end
 
 
 
-# ============================================================
+# ===================================
 # Public API for TQFT Symbols
-# ============================================================
+# ===================================
 
 """
     qdim(j, [k]; mode=:generic)

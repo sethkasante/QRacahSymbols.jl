@@ -2,12 +2,7 @@
 # Quantum Integers [n] and Dimensions [2j+1]_q
 # ============================================================
 
-"""
-    qint(n::Int; mode=:generic)
-    qint(n::Int, k::Int; mode=:exact, T=Float64)
-    
-Public API for quantum integers.
-"""
+#qintegers 
 function qint(n::Int; mode=:generic)
     @assert mode == :generic "Numeric and exact modes require level k. Use qint(n, k; mode=...)"
     n == 0 && return CycloMonomial(0, 0, Int[]) 
