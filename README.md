@@ -19,7 +19,7 @@ This guarantees mathematically exact, zero-drift computations of tensor network 
   * `:numeric`: Ultrafast evaluation using a *log-sum-exp* stabilization procedure for low spins. Safe from factorial overflow up to massive spins ($j \le 450$, for $k > 20,000$) using `BigFloat`. 
   * `:exact`: Algebraic evaluation mapping strictly into `Nemo.jl` cyclotomic number fields $\mathbb Q(\zeta_{2(k+2)})$.
   * `:generic`: Pure symbolic factorization into dense integer arrays of `CycloMonomial` representations.
-  * `:classical`: Evaluates the un-deformed Ponzano-Regge limit ($q \to 1$ or $k \to \infty$).
+  * `:classical`: Evaluates the un-deformed Ponzano-Regge limit ($q \to 1$ or $k \to \infty$). 
   
 * **TQFT Category Suite**: Evaluates quantum dimensions, R-matrices (braiding), F-symbols (fusion), and G-symbols (tetrahedral weights).
 
