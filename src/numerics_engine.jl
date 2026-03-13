@@ -1,6 +1,6 @@
 # src/Numerics.jl
 
-const BIG_PI = big(π)
+# const BIG_PI = big(π)
 
 struct NumericSU2kModel{T <: AbstractFloat}
     k::Int
@@ -15,7 +15,7 @@ function NumericSU2kModel(k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=25
 end
 
 function qinteger_num(n::Int, k::Int, T::Type)
-    θ = BIG_PI / T(k+2)
+    θ = big(π) / T(k+2)
     return sin(n * θ) / sin(θ)
 end
 
@@ -35,7 +35,7 @@ function logqn_table(k::Int, T::Type, prec::Int)::Vector{T}
         return tab
     else
         setprecision(BigFloat, prec) do
-            θ = BIG_PI / BigFloat(N)
+            θ = big(π) / BigFloat(N)
             logsinθ = log(sin(θ))
             tab = Vector{T}(undef, N)
             tab[1] = zero(T)
@@ -109,9 +109,20 @@ end
 qracah6j_numeric(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin) where {T} =
     _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
 
+# function qracah6j_numeric(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
+#     model = NumericSU2kModel(k; T=T, prec=prec)
+#     return _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
+# end
 function qracah6j_numeric(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-    model = NumericSU2kModel(k; T=T, prec=prec)
-    return _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
+    if T === BigFloat
+        return setprecision(BigFloat, prec) do
+            model = NumericSU2kModel(k; T=T, prec=prec)
+            _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
+        end
+    else
+        model = NumericSU2kModel(k; T=T, prec=prec)
+        return _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
+    end
 end
 
 
@@ -170,7 +181,19 @@ end
 qracah3j_numeric(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin) where {T} =
     _qracah3j_stable(model, j1, j2, j3, m1, m2)
 
+# function qracah3j_numeric(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
+#     model = NumericSU2kModel(k; T=T, prec=prec)
+#     return _qracah3j_stable(model, j1, j2, j3, m1, m2)
+# end
+
 function qracah3j_numeric(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-    model = NumericSU2kModel(k; T=T, prec=prec)
-    return _qracah3j_stable(model, j1, j2, j3, m1, m2)
+    if T === BigFloat
+        return setprecision(BigFloat, prec) do
+            model = NumericSU2kModel(k; T=T, prec=prec)
+            _qracah3j_stable(model, j1, j2, j3, m1, m2)
+        end
+    else
+        model = NumericSU2kModel(k; T=T, prec=prec)
+        return _qracah3j_stable(model, j1, j2, j3, m1, m2)
+    end
 end
