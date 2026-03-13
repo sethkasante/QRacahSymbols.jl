@@ -110,7 +110,7 @@ qracah6j_numeric(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, j4::S
     _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
 
 # function qracah6j_numeric(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-#     model = NumericSU2kModel(k; T=T, prec=prec)
+#     model = NumericSU2kModel(k; T=T, prec=prec) 
 #     return _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
 # end
 function qracah6j_numeric(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
