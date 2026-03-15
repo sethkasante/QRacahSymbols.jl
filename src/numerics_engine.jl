@@ -1,199 +1,208 @@
-# src/Numerics.jl
 
-# const BIG_PI = big(π)
+# ---------------------------------------------------------------------------
+# :numeric engine - uses (Log-Sum-Exp for Hypergeometric Summation)
+# `Brute force` numerical computation of the Racah-Wigner 3j and 6j symbols 
+# ---------------------------------------------------------------------------
 
-struct NumericSU2kModel{T <: AbstractFloat}
+
+# LRU Cached tables for computations
+const LOGQFACT_CACHE    = LRU{Tuple{Int, DataType, Int}, Any}(maxsize = 4096)
+const Q6J_NUMERIC_CACHE = LRU{Tuple{NTuple{6, Float64}, Int, Int}, Any}(maxsize=50_000)
+
+
+#----- Model Construction --- 
+
+""" NumericSU2kModel
+
+Holds struct for the precomputed log-qfactorial table for specific level k.
+"""
+struct NumericSU2kModel{T<:AbstractFloat}
     k::Int
     logqnfact::Vector{T}
 end
 
+
+"""
+    NumericSU2kModel(k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
+
+Constructs or retrieves a cached `NumericSU2kModel` for level `k`. 
+If `T` is `BigFloat`, computations are executed at `prec` bits of precision.
+"""
 function NumericSU2kModel(k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-    tab::Vector{T} = get!(LOGQFACT_CACHE, (k, T, prec)) do
-        logqnfact_table(k, T, prec) 
+    key_prec = T == Float64 ? 53 : prec 
+    tab = get!(LOGQFACT_CACHE, (k, T, key_prec)) do
+        logqnfact_table(k, T, key_prec) 
     end
     return NumericSU2kModel{T}(k, tab)
 end
 
-function qinteger_num(n::Int, k::Int, T::Type)
-    θ = big(π) / T(k+2)
-    return sin(n * θ) / sin(θ)
-end
+"""
+    logqnfact_table(k::Int, T::Type, prec::Int) -> Vector{T}
 
-function logqn_table(k::Int, T::Type, prec::Int)::Vector{T}
-    N = k + 2
-    if T === Float64
-        θ = pi / N
-        logsinθ = log(sin(θ))
-        tab = Vector{T}(undef, N)
-        tab[1] = zero(T)
-        half = N ÷ 2
-        @inbounds for n in 1:half
-            val = log(sin(n * θ)) - logsinθ
-            tab[n+1] = val
-            tab[N + 1 - n] = val
+Internal function to generate the log-qfactorial table from n=0,...,k+1.
+"""
+function logqnfact_table(k::Int, T::Type{<:AbstractFloat}, prec::Int)::Vector{T}
+    # enforce precision when using BigFloats
+    if T === BigFloat
+        return setprecision(prec) do
+            build_logqnfact_table(k, T)
         end
-        return tab
     else
-        setprecision(BigFloat, prec) do
-            θ = big(π) / BigFloat(N)
-            logsinθ = log(sin(θ))
-            tab = Vector{T}(undef, N)
-            tab[1] = zero(T)
-            half = N ÷ 2
-            @inbounds for n in 1:half
-                val = log(sin(n * θ)) - logsinθ
-                tab[n+1] = val
-                tab[N + 1 - n] = val
-            end
-            return tab
-        end
+        return build_logqnfact_table(k, T)
     end
 end
 
-function logqnfact_table(k::Int, T::Type, prec::Int)::Vector{T}
-    logqn = logqn_table(k, T, prec)
-    tab = Vector{T}(undef, k + 2) 
-    tab[1] = logqn[1]  
-    @inbounds for n in 2:k+2
+# build a table for log q-factorials for n=0,...,k+1
+function build_logqnfact_table(k::Int, T::Type{<:AbstractFloat})::Vector{T}
+    N = k + 2 
+    θ = one(T) / T(N)
+    logsinθ = log(sinpi(θ))
+    
+    # compute log of qinteger: log([n]_q)
+    logqn = Vector{T}(undef, N)
+    logqn[1] = zero(T) 
+
+    #use symmetries of sin
+    half = N ÷ 2 
+    @inbounds for n in 1:half
+        val = log(sinpi(T(n) * θ)) - logsinθ
+        logqn[n+1] = val
+        logqn[N + 1 - n] = val
+    end
+    
+    # log([n]_q!)
+    tab = Vector{T}(undef, N) 
+    tab[1] = zero(T) # log([0]_q!) = 0
+    
+    @inbounds for n in 2:N
         tab[n] = tab[n-1] + logqn[n]
     end
+    
     return tab
 end
 
-@inline function log_qΔ(j1, j2, j3, tab::Vector{T})::T where {T}
-    a = Int(j1 + j2 - j3); b = Int(j1 - j2 + j3); c = Int(-j1 + j2 + j3); d = Int(j1 + j2 + j3)
+
+# Computes log(Δ) for a valid triangular coefficients.
+@inline function log_qΔ(j1::Spin, j2::Spin, j3::Spin, tab::Vector{T})::T where {T}
+    a = Int(j1 + j2 - j3)
+    b = Int(j1 - j2 + j3)
+    c = Int(-j1 + j2 + j3)
+    d = Int(j1 + j2 + j3)
+    
     return (tab[a+1] + tab[b+1] + tab[c+1] - tab[d+2]) / 2 
 end
 
-@inline function logqtri_coeffs(j1, j2, j3, j4, j5, j6, tab::Vector{T})::T where {T}
-    return log_qΔ(j1, j2, j3, tab) + log_qΔ(j1, j5, j6, tab) + log_qΔ(j2, j4, j6, tab) + log_qΔ(j3, j4, j5, tab)
-end
 
-@inline function log_racah_summand(z, α1, α2, α3, α4, β1, β2, β3, tab::Vector{T})::T where {T}
-    lognum = tab[z+2]
-    logden = tab[z-α1+1] + tab[z-α2+1] + tab[z-α3+1] + tab[z-α4+1] + tab[β1-z+1] + tab[β2-z+1] + tab[β3-z+1]
-    return lognum - logden
-end
+#---- Compute quantum 3j Symbol ---- 
 
-function _qracah6j_stable(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)::T where {T}
-    # if !qδtet(j1, j2, j3, j4, j5, j6, model.k) 
-    #     return zero(T)
-    # end
-    #admissible checks in main file
-    
-    table = model.logqnfact
-    logT = logqtri_coeffs(j1, j2, j3, j4, j5, j6, table)
+"""
+    _qracah3j_stable(model::NumericSU2kModel, j1, j2, j3, m1, m2)
 
-    α1 = Int(j1 + j2 + j3); α2 = Int(j1 + j5 + j6); α3 = Int(j2 + j4 + j6); α4 = Int(j3 + j4 + j5)
-    β1 = Int(j1 + j2 + j4 + j5); β2 = Int(j1 + j3 + j4 + j6); β3 = Int(j2 + j3 + j5 + j6)
-
-    zrange = max(α1, α2, α3, α4):min(β1, β2, β3, model.k) 
-    
-    logmax = typemin(T)
-    @inbounds for z in zrange
-        logTsz = logT + log_racah_summand(z, α1, α2, α3, α4, β1, β2, β3, table)
-        logmax = max(logmax, logTsz)
-    end
-
-    res_scaled = zero(T)
-    @inbounds for z in zrange
-        logTsz = logT + log_racah_summand(z, α1, α2, α3, α4, β1, β2, β3, table)
-        val = exp(logTsz - logmax)
-        res_scaled += iseven(z) ? val : -val
-    end
-
-    return exp(logmax) * res_scaled
-end
-
-# Disambiguated Wrappers
-qracah6j_numeric(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin) where {T} =
-    _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
-
-# function qracah6j_numeric(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-#     model = NumericSU2kModel(k; T=T, prec=prec) 
-#     return _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
-# end
-function qracah6j_numeric(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-    if T === BigFloat
-        return setprecision(BigFloat, prec) do
-            model = NumericSU2kModel(k; T=T, prec=prec)
-            _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
-        end
-    else
-        model = NumericSU2kModel(k; T=T, prec=prec)
-        return _qracah6j_stable(model, j1, j2, j3, j4, j5, j6)
-    end
-end
-
-
-
-# ============================================================
-# High-Performance Numeric 3j Evaluator
-# ============================================================
-
-@inline function log_q3j_prefactor(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, tab::Vector{T})::T where {T}
-    log_delta = log_qΔ(j1, j2, j3, tab)
-    log_facts = tab[Int(j1+m1)+1] + tab[Int(j1-m1)+1] + 
-                tab[Int(j2+m2)+1] + tab[Int(j2-m2)+1] + 
-                tab[Int(j3-m1-m2)+1] + tab[Int(j3+m1+m2)+1]
-                
-    # log(sqrt(Delta^2 * facts)) = log_delta + 0.5 * log_facts
-    return log_delta + 0.5 * log_facts
-end
-
-@inline function log_q3j_summand(z::Int, α1::Int, α2::Int, β1::Int, β2::Int, β3::Int, tab::Vector{T})::T where {T}
-    # Numerator is 1, so log(1) = 0. We just negate the sum of the denominator logs.
-    return -(tab[z+1] + tab[α1+z+1] + tab[α2+z+1] + tab[β1-z+1] + tab[β2-z+1] + tab[β3-z+1])
-end
-
+Evaluates the quantum 3j-symbol using a NaN-safe Log-Sum-Exp alternating summation.
+"""
 function _qracah3j_stable(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin)::T where {T}
-    #admissible checks performed in the main file
     table = model.logqnfact
+    
+    # Prefactor
+    log_delta = log_qΔ(j1, j2, j3, table)
+    log_facts = table[Int(j1+m1)+1] + table[Int(j1-m1)+1] + 
+                table[Int(j2+m2)+1] + table[Int(j2-m2)+1] + 
+                table[Int(j3-m1-m2)+1] + table[Int(j3+m1+m2)+1]
+    
+    logT = log_delta + 0.5 * log_facts
 
-    logT = log_q3j_prefactor(j1, j2, j3, m1, m2, table)
-
+    # Bounds
     α1 = Int(j3 - j2 + m1) 
     α2 = Int(j3 - j1 - m2)
     β1 = Int(j1 + j2 - j3)
     β2 = Int(j1 - m1)
     β3 = Int(j2 + m2)
 
-    zrange = max(-α1, -α2, 0):min(β1, β2, β3, model.k) 
+    z_min = max(-α1, -α2, 0)
+    z_max = min(β1, β2, β3, model.k) 
     
+    # topological zero
+    z_min > z_max && return zero(T)
+
+    # find maximum of log
     logmax = typemin(T)
-    @inbounds for z in zrange
-        logTsz = logT + log_q3j_summand(z, α1, α2, β1, β2, β3, table)
-        logmax = max(logmax, logTsz)
+    @inbounds for z in z_min:z_max
+        log_sz = -(table[z+1] + table[α1+z+1] + table[α2+z+1] + table[β1-z+1] + table[β2-z+1] + table[β3-z+1])
+        logmax = max(logmax, log_sz)
     end
 
+    # perform summation
     res_scaled = zero(T)
-    phase_offset = α1 - α2
+    phase_offset = α1 - α2 
+    curr_sign = isodd(z_min + phase_offset) ? -one(T) : one(T)
     
-    @inbounds for z in zrange
-        logTsz = logT + log_q3j_summand(z, α1, α2, β1, β2, β3, table)
-        val = exp(logTsz - logmax)
-        res_scaled += isodd(z + phase_offset) ? -val : val
+    @inbounds for z in z_min:z_max
+        log_sz = -(table[z+1] + table[α1+z+1] + table[α2+z+1] + table[β1-z+1] + table[β2-z+1] + table[β3-z+1])
+        res_scaled += curr_sign * exp(log_sz - logmax)
+        curr_sign = -curr_sign
     end
 
-    return exp(logmax) * res_scaled
+    return exp(logT + logmax) * res_scaled
 end
 
-qracah3j_numeric(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin) where {T} =
-    _qracah3j_stable(model, j1, j2, j3, m1, m2)
 
-# function qracah3j_numeric(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-#     model = NumericSU2kModel(k; T=T, prec=prec)
-#     return _qracah3j_stable(model, j1, j2, j3, m1, m2)
-# end
 
-function qracah3j_numeric(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256)
-    if T === BigFloat
-        return setprecision(BigFloat, prec) do
-            model = NumericSU2kModel(k; T=T, prec=prec)
-            _qracah3j_stable(model, j1, j2, j3, m1, m2)
-        end
-    else
-        model = NumericSU2kModel(k; T=T, prec=prec)
-        return _qracah3j_stable(model, j1, j2, j3, m1, m2)
+#---- Compute quantum 6j Symbol ---- 
+
+"""
+    _qracah6j_stable(model::NumericSU2kModel, j1, j2, j3, j4, j5, j6)
+
+Evaluates the quantum 6j-symbol using a NaN-safe Log-Sum-Exp alternating summation.
+"""
+function _qracah6j_stable(model::NumericSU2kModel{T}, j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin)::T where {T}
+    table = model.logqnfact
+    
+    # Prefactor
+    logT = log_qΔ(j1, j2, j3, table) + log_qΔ(j1, j5, j6, table) + 
+           log_qΔ(j2, j4, j6, table) + log_qΔ(j3, j4, j5, table)
+
+    # Bounds
+    α1 = Int(j1 + j2 + j3) 
+    α2 = Int(j1 + j5 + j6)
+    α3 = Int(j2 + j4 + j6)
+    α4 = Int(j3 + j4 + j5)
+    β1 = Int(j1 + j2 + j4 + j5)
+    β2 = Int(j1 + j3 + j4 + j6)
+    β3 = Int(j2 + j3 + j5 + j6)
+
+    z_min = max(α1, α2, α3, α4)
+    z_max = min(β1, β2, β3, model.k) # note: [k+2]!=0
+    
+    # topological zero
+    z_min > z_max && return zero(T)
+    
+    # find maximum of log
+    logmax = typemin(T)
+    @inbounds for z in z_min:z_max
+        log_sz = table[z+2] - (table[z-α1+1] + table[z-α2+1] + table[z-α3+1] + table[z-α4+1] + table[β1-z+1] + table[β2-z+1] + table[β3-z+1])
+        logmax = max(logmax, log_sz)
     end
+
+    # perform alternating sum
+    res_scaled = zero(T)
+    curr_sign = iseven(z_min) ? one(T) : -one(T)
+    
+    @inbounds for z in z_min:z_max
+        log_sz = table[z+2] - (table[z-α1+1] + table[z-α2+1] + table[z-α3+1] + table[z-α4+1] + table[β1-z+1] + table[β2-z+1] + table[β3-z+1])
+        res_scaled += curr_sign * exp(log_sz - logmax)
+        curr_sign = -curr_sign
+    end
+
+    return exp(logT + logmax) * res_scaled
 end
+
+
+#----- Internal dispatchers ----
+
+q3j_numeric(j1::Spin, j2::Spin, j3::Spin, m1::Spin, m2::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256) = 
+    _qracah3j_stable(NumericSU2kModel(k; T=T, prec=prec), j1, j2, j3, m1, m2)
+
+q6j_numeric(j1::Spin, j2::Spin, j3::Spin, j4::Spin, j5::Spin, j6::Spin, k::Int; T::Type{<:AbstractFloat}=Float64, prec::Int=256) = 
+    _qracah6j_stable(NumericSU2kModel(k; T=T, prec=prec), j1, j2, j3, j4, j5, j6)
+
+# export q6j_numeric, q3j_numeric
