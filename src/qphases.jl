@@ -186,6 +186,7 @@ function rmatrix(j1::Spin, j2::Spin, j3::Spin;
     # generic q
     if !isnothing(q)
         q_C = complex(float(q))
-        return T(s * exp((p / 2) * log(q_C)))
+        return T(s * (q_C ^ (p / 2)))
+        # return T(s * exp((p / 2) * log(q_C)))
     end
 end
