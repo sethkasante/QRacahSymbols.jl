@@ -87,8 +87,10 @@ Ultra-fast log-magnitude evaluator for the hot loop.
     m.sign == 0 && return -T(Inf)
     
     lm = zero(T)
-    @inbounds for (d, e) in m.phi_exps
-        lm += e * table[d]
+    exps = m.phi_exps
+    @inbounds for i in eachindex(exps)
+        pair = exps[i]
+        lm += pair.second * table[pair.first]
     end
     
     return lm
